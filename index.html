@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JDC 3D Warehouse Audit: Stock Opname Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0b0f19; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        .scanlines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-white">
+
+    <div id="canvas-container"></div>
+
+    <!-- HUD / Antarmuka -->
+    <div class="absolute top-0 left-0 w-full p-4 flex justify-between items-center pointer-events-none">
+        <div class="bg-slate-900/80 backdrop-blur border border-slate-700/60 px-4 py-2 rounded-xl shadow-xl flex items-center space-x-4 pointer-events-auto">
+            <div class="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
+            <div>
+                <h1 class="text-sm font-bold tracking-wider text-emerald-400">JDC WAREHOUSE 3D</h1>
+                <p class="text-xs text-slate-400">Shift: Operational Audit</p>
+            </div>
+        </div>
+
+        <div class="flex space-x-3 pointer-events-auto">
+            <div class="bg-slate-900/80 backdrop-blur border border-slate-700/60 px-4 py-2 rounded-xl text-center">
+                <span class="text-[10px] uppercase tracking-widest text-slate-400 block">Sisa Waktu</span>
+                <span id="timer-display" class="text-lg font-mono font-bold text-amber-400">03:00</span>
+            </div>
+            <div class="bg-slate-900/80 backdrop-blur border border-slate-700/60 px-4 py-2 rounded-xl text-center">
+                <span class="text-[10px] uppercase tracking-widest text-slate-400 block">Skor Audit</span>
+                <span id="score-display" class="text-lg font-mono font-bold text-cyan-400">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Misi -->
+    <div class="absolute bottom-6 left-6 pointer-events-none max-w-sm">
+        <div class="bg-slate-900/90 backdrop-blur border border-cyan-500/30 p-4 rounded-2xl shadow-2xl pointer-events-auto">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs uppercase tracking-widest text-cyan-400 font-bold">🎯 Misi Stock Opname</span>
+                <span id="progress-text" class="text-xs text-slate-400">Rak 1 / 5</span>
+            </div>
+            <div id="mission-card" class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                <p class="text-xs text-slate-300">Menuju ke lokasi:</p>
+                <p id="target-loc-name" class="text-base font-bold text-white mb-1">RAK A-01</p>
+                <div class="flex justify-between text-xs text-slate-400 border-t border-slate-700/50 pt-2 mt-1">
+                    <span>SKU: <strong id="target-sku" class="text-amber-300">SKU-LOG-01</strong></span>
+                    <span>Qty Fisik: <strong id="target-qty" class="text-emerald-300">24</strong> Pcs</span>
+                </div>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-2 text-center">Gunakan W, A, S, D atau Tombol Panah untuk Jalan. Dekati Rak Target untuk Scan.</p>
+        </div>
+    </div>
+
+    <!-- Kontrol Mobile -->
+    <div class="absolute bottom-6 right-6 flex flex-col items-center space-y-1 pointer-events-auto md:hidden">
+        <button id="btn-up" class="w-12 h-12 bg-slate-800/80 border border-slate-600 rounded-xl text-white font-bold active:bg-cyan-600">▲</button>
+        <div class="flex space-x-6">
+            <button id="btn-left" class="w-12 h-12 bg-slate-800/80 border border-slate-600 rounded-xl text-white font-bold active:bg-cyan-600">◀</button>
+            <button id="btn-right" class="w-12 h-12 bg-slate-800/80 border border-slate-600 rounded-xl text-white font-bold active:bg-cyan-600">▶</button>
+        </div>
+        <button id="btn-down" class="w-12 h-12 bg-slate-800/80 border border-slate-600 rounded-xl text-white font-bold active:bg-cyan-600">▼</button>
+    </div>
+
+    <!-- Modal Scanner -->
+    <div id="scanner-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-cyan-500/50 w-96 p-6 rounded-3xl shadow-2xl scanlines relative">
+            <div class="absolute top-3 right-4 text-xs font-mono text-cyan-400">SYS-SCAN v2.6</div>
+            <h2 class="text-lg font-bold text-white mb-1">Pemeriksaan Rak Gudang</h2>
+            <p class="text-xs text-slate-400 mb-4">Verifikasi data fisik terhadap sistem JDC Warehouse.</p>
+
+            <div class="space-y-3 mb-6 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">Lokasi Rak:</span>
+                    <span id="modal-loc" class="font-bold text-cyan-300">RAK A-01</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">SKU Barang:</span>
+                    <span id="modal-sku" class="font-bold text-amber-300">SKU-8821</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-400">Sistem Qty:</span>
+                    <span id="modal-sys-qty" class="font-bold text-white">50 Pcs</span>
+                </div>
+            </div>
+
+            <div class="mb-5">
+                <label class="block text-xs uppercase tracking-wider text-slate-400 mb-2">Input Hitung Fisik (Opname):</label>
+                <input type="number" id="input-physical-qty" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono text-center text-lg focus:outline-none focus:border-cyan-500" value="50">
+            </div>
+
+            <div class="flex space-x-3">
+                <button onclick="closeScannerModal(false)" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl font-medium text-sm transition">Batal</button>
+                <button onclick="submitAudit()" class="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-cyan-600/30 transition">Submit Audit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Game Over -->
+    <div id="gameover-modal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-700 w-96 p-8 rounded-3xl text-center shadow-2xl">
+            <h2 id="go-title" class="text-2xl font-bold text-white mb-2">Shift Selesai!</h2>
+            <p id="go-desc" class="text-sm text-slate-400 mb-6">Anda telah menyelesaikan seluruh tugas audit rak gudang hari ini.</p>
+            <div class="bg-slate-950 p-4 rounded-2xl mb-6 border border-slate-800">
+                <span class="text-xs uppercase tracking-widest text-slate-500 block">Total Skor Akhir</span>
+                <span id="final-score" class="text-3xl font-mono font-bold text-cyan-400">450</span>
+            </div>
+            <button onclick="restartGame()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-emerald-600/30 transition">Mulai Shift Baru</button>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer;
+        let player = { x: 0, z: 2, rot: 0, speed: 0.08 };
+        let keys = { w: false, a: false, s: false, d: false, arrowUp: false, arrowDown: false, arrowLeft: false, arrowRight: false };
+        
+        const racksData = [
+            { id: 'RAK A-01', x: -6, z: -8, sku: 'SKU-LOG-01', name: 'Forklift Sparepart Belt', qty: 24, audited: false },
+            { id: 'RAK A-03', x: -6, z: -16, sku: 'SKU-LOG-02', name: 'Pallet Jack Hydraulic Oil', qty: 15, audited: false },
+            { id: 'RAK B-02', x: 0, z: -12, sku: 'SKU-LOG-03', name: 'Shrink Wrap Roll Heavy Duty', qty: 40, audited: false },
+            { id: 'RAK C-01', x: 6, z: -8, sku: 'SKU-LOG-04', name: 'Barcode Scanner Gun Laser', qty: 8, audited: false },
+            { id: 'RAK C-03', x: 6, z: -16, sku: 'SKU-LOG-05', name: 'Safety Cone & Barrier Tape', qty: 65, audited: false }
+        ];
+
+        let currentMissionIndex = 0;
+        let score = 0;
+        let timeLeft = 180;
+        let gameActive = true;
+        let activeRackTarget = null;
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0f19);
+            scene.fog = new THREE.FogExp2(0x0b0f19, 0.035);
+
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.7, 5);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+
+            for(let z = -20; z <= 0; z += 10) {
+                const neonLight = new THREE.PointLight(0x00ffff, 1.2, 15);
+                neonLight.position.set(0, 5, z);
+                scene.add(neonLight);
+            }
+
+            createWarehouseEnvironment();
+            updateMissionUI();
+
+            window.addEventListener('keydown', (e) => handleKey(e, true));
+            window.addEventListener('keyup', (e) => handleKey(e, false));
+            window.addEventListener('resize', onWindowResize);
+
+            setupMobileControls();
+
+            setInterval(() => {
+                if(!gameActive) return;
+                timeLeft--;
+                let m = Math.floor(timeLeft / 60);
+                let s = timeLeft % 60;
+                document.getElementById('timer-display').innerText = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                if(timeLeft <= 0) endGame(false);
+            }, 1000);
+
+            animate();
+        }
+
+        function createWarehouseEnvironment() {
+            const floorGeo = new THREE.PlaneGeometry(40, 60);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.z = -15;
+            scene.add(floor);
+
+            const lineGeo = new THREE.PlaneGeometry(0.2, 60);
+            const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308 });
+            const lineL = new THREE.Mesh(lineGeo, lineMat);
+            lineL.rotation.x = -Math.PI / 2;
+            lineL.position.set(-2.5, 0.01, -15);
+            scene.add(lineL);
+
+            const lineR = new THREE.Mesh(lineGeo, lineMat);
+            lineR.rotation.x = -Math.PI / 2;
+            lineR.position.set(2.5, 0.01, -15);
+            scene.add(lineR);
+
+            racksData.forEach(rack => buildRackStructure(rack.x, rack.z));
+        }
+
+        function buildRackStructure(x, z) {
+            const rackGroup = new THREE.Group();
+            const postMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 });
+            const postGeo = new THREE.BoxGeometry(0.2, 4, 0.2);
+
+            [-0.9, 0.9].forEach(px => {
+                [-0.4, 0.4].forEach(pz => {
+                    const post = new THREE.Mesh(postGeo, postMat);
+                    post.position.set(px, 2, pz);
+                    rackGroup.add(post);
+                });
+            });
+
+            const shelfMat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+            const boxColors = [0xef4444, 0x3b82f6, 0x10b981, 0xf59e0b, 0x8b5cf6];
+
+            [1, 2.5, 4].forEach((yLevel, levelIdx) => {
+                const shelfGeo = new THREE.BoxGeometry(2, 0.1, 1);
+                const shelf = new THREE.Mesh(shelfGeo, shelfMat);
+                shelf.position.set(0, yLevel, 0);
+                rackGroup.add(shelf);
+
+                for(let b = -0.6; b <= 0.6; b += 0.5) {
+                    const boxGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+                    const col = boxColors[(levelIdx + Math.floor((b + 1) * 10)) % boxColors.length];
+                    const boxMat = new THREE.MeshStandardMaterial({ color: col });
+                    const box = new THREE.Mesh(boxGeo, boxMat);
+                    box.position.set(b, yLevel + 0.25, 0);
+                    rackGroup.add(box);
+                }
+            });
+
+            rackGroup.position.set(x, 0, z);
+            scene.add(rackGroup);
+        }
+
+        function handleKey(e, isDown) {
+            switch(e.key.toLowerCase()) {
+                case 'w': keys.w = isDown; break;
+                case 's': keys.s = isDown; break;
+                case 'a': keys.a = isDown; break;
+                case 'd': keys.d = isDown; break;
+                case 'arrowup': keys.arrowUp = isDown; break;
+                case 'arrowdown': keys.arrowDown = isDown; break;
+                case 'arrowleft': keys.arrowLeft = isDown; break;
+                case 'arrowright': keys.arrowRight = isDown; break;
+            }
+        }
+
+        function setupMobileControls() {
+            const bindBtn = (id, keyName) => {
+                const el = document.getElementById(id);
+                if(!el) return;
+                el.addEventListener('touchstart', () => keys[keyName] = true);
+                el.addEventListener('touchend', () => keys[keyName] = false);
+                el.addEventListener('mousedown', () => keys[keyName] = true);
+                el.addEventListener('mouseup', () => keys[keyName] = false);
+            };
+            bindBtn('btn-up', 'w');
+            bindBtn('btn-down', 's');
+            bindBtn('btn-left', 'arrowLeft');
+            bindBtn('btn-right', 'arrowRight');
+        }
+
+        function animate() {
+            if (!gameActive) return;
+            requestAnimationFrame(animate);
+
+            if (keys.arrowLeft) player.rot += 0.03;
+            if (keys.arrowRight) player.rot -= 0.03;
+
+            let moveStep = 0;
+            if (keys.w || keys.arrowUp) moveStep = player.speed;
+            if (keys.s || keys.arrowDown) moveStep = -player.speed;
+
+            if (moveStep !== 0) {
+                player.x += Math.sin(player.rot) * moveStep;
+                player.z += Math.cos(player.rot) * moveStep;
+                player.x = Math.max(-12, Math.min(12, player.x));
+                player.z = Math.max(-25, Math.min(5, player.z));
+            }
+
+            camera.position.x = player.x;
+            camera.position.z = player.z;
+            camera.rotation.y = player.rot;
+
+            checkTargetProximity();
+            renderer.render(scene, camera);
+        }
+
+        function updateMissionUI() {
+            if(currentMissionIndex >= racksData.length) {
+                endGame(true);
+                return;
+            }
+            const target = racksData[currentMissionIndex];
+            document.getElementById('target-loc-name').innerText = target.id;
+            document.getElementById('target-sku').innerText = target.sku;
+            document.getElementById('target-qty').innerText = target.qty;
+            document.getElementById('progress-text').innerText = `Rak ${currentMissionIndex + 1} / ${racksData.length}`;
+        }
+
+        function checkTargetProximity() {
+            const target = racksData[currentMissionIndex];
+            const dist = Math.hypot(player.x - target.x, player.z - target.z);
+            if (dist < 2.5 && !target.audited) {
+                activeRackTarget = target;
+                openScannerModal(target);
+            }
+        }
+
+        function openScannerModal
