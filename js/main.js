@@ -132,7 +132,7 @@ function refreshCases() { ui.renderCases(S.cases, S.selected); if (S.overlay ===
 
 function updateBoard() {
   const lines = S.cases.map((c) => ({ text: `${c.sku} · lot ${c.lot}`, done: c.done }));
-  env.setBoard(lines, `PAPAN OPNAME — SHIFT ${S.L.id}`);
+  env.setBoard(lines, `SHIFT ${S.L.id}`);
 }
 
 const liveScore = () => Math.max(0, S.cases.filter((c) => c.done).length * 500 + S.verified * 50 - S.penalty);
@@ -232,7 +232,7 @@ function doConfirm() {
     ui.toast(`Tag serah-terima di pallet: "dipindah D. — TANPA SCAN".`, '', 4200);
     if (!left) {
       S.reportReady = true; Sound.win();
-      ui.toast('Semua barang ditemukan! Kembali ke Kantor Opname, lapor ke Pak Hendra.', 'good', 7000);
+      ui.toast('Semua barang ditemukan! Temui Pak Hendra di titik briefing, lapor selesai.', 'good', 7000);
     } else if (S.selected === c.id) S.selected = (S.cases.find((q) => !q.done) || { id: 1 }).id;
     refreshCases(); updateBoard(); ui.hideScan();
     return;
@@ -539,7 +539,7 @@ function gameTick(dt, info) {
     let obj;
     if (S.reportReady) {
       const h = env.npcs.find((n) => n.id === 'hendra'), d = Math.round(Math.hypot(h.x - player.x, h.z - player.z));
-      obj = `Lapor ke <b>Pak Hendra</b> di Kantor Opname · ${d} m`;
+      obj = `Lapor ke <b>Pak Hendra</b> di titik briefing · ${d} m`;
     } else {
       const c = S.cases.find((q) => q.id === S.selected && !q.done) || S.cases.find((q) => !q.done);
       obj = c ? `Cari <b>${c.sku}</b> · lot <b>${c.lot}</b> · mulai dari ${c.sysText}` : '';

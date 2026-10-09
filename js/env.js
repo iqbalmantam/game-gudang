@@ -1,4 +1,4 @@
-/* env.js — bangunan gudang, dock, kantor, dekorasi, forklift & NPC (dinamis) */
+/* env.js — bangunan gudang, dock, mezanin, dekorasi, forklift & NPC (dinamis) */
 import { Chunker, rgb, mix, wallCanvas, slatCanvas, asphaltCanvas, tileCanvas, lightmapCanvas, glowCanvas } from './kit.js';
 import { mulberry32, KIND, KIND_H } from './items.js';
 import { C } from './world.js';
@@ -82,6 +82,22 @@ export function buildEnvironment(w) {
   const winC = new Chunker(e, w.gBox, { size: 40, name: 'jendela' });
   for (let x = B.x0 + 5; x < B.x1 - 3; x += 7.5) { winC.box(x, 14.5, B.z0 + 0.04, 1.3, 6.5, 0.05, [0.82, 0.93, 1.0], 1); winC.box(x, 14.5, B.z1 - 0.04, 1.3, 6.5, 0.05, [0.82, 0.93, 1.0], 1); }
   for (let z = B.z0 + 5; z < B.z1 - 3; z += 7.5) { winC.box(B.x0 + 0.04, 14.5, z, 0.05, 6.5, 1.3, [0.82, 0.93, 1.0], 1); winC.box(B.x1 - 0.04, 14.5, z, 0.05, 6.5, 1.3, [0.82, 0.93, 1.0], 1); }
+  /* kolom baja, girt horizontal & kusen jendela (seperti foto: dinding cladding gelap dengan rangka abu-abu) */
+  const gSteel = rgb(0x8e959c), gDark = rgb(0x4a525a);
+  const wallFrame = (len0, len1, step, fixed, alongX, sgn) => {
+    for (let a = len0; a < len1; a += step) {
+      const x = alongX ? a : fixed + sgn * 0.12, z = alongX ? fixed + sgn * 0.12 : a;
+      dec.box(x, H / 2, z, alongX ? 0.45 : 0.25, H, alongX ? 0.25 : 0.45, gSteel);
+    }
+    for (const y of [7.5, 11.5, 18.5]) {
+      if (alongX) dec.box(cx, y, fixed + sgn * 0.1, W, 0.3, 0.16, gSteel); else dec.box(fixed + sgn * 0.1, y, cz, 0.16, 0.3, D, gSteel);
+    }
+  };
+  wallFrame(B.x0 + 1.25, B.x1, 7.5, B.z0, true, 1); wallFrame(B.x0 + 1.25, B.x1, 7.5, B.z1, true, -1);
+  wallFrame(B.z0 + 1.25, B.z1, 7.5, B.x0, false, 1); wallFrame(B.z0 + 1.25, B.z1, 7.5, B.x1, false, -1);
+  for (let x = B.x0 + 5; x < B.x1 - 3; x += 7.5) { dec.box(x, 14.5, B.z0 + 0.1, 1.5, 0.12, 0.1, gDark); dec.box(x, 14.5, B.z1 - 0.1, 1.5, 0.12, 0.1, gDark); }
+  // pipa sprinkler merah sepanjang dinding
+  dec.box(cx, 9.0, B.z0 + 0.5, W, 0.16, 0.16, rgb(0x9b2a22)); dec.box(cx, 9.0, B.z1 - 0.5, W, 0.16, 0.16, rgb(0x9b2a22));
   winC.finalize();
   const setGlow = (on) => { for (const b of [...glowV.map.values(), ...glowH.map.values(), ...winC.map.values()]) b.visible = on && b.n > 0; };
 
@@ -139,7 +155,7 @@ export function buildEnvironment(w) {
     dec.box(x, DH + 0.15, zIn - dir * 0.15, DW + 0.6, 0.3, 0.4, Cyellow);
     sign('dock' + Math.min(14, n), x, DH + 0.9, zIn - dir * 0.3, 1.6, 0.8, side === 'S' ? PI : 0);
     dec.box(x, 0.06, zIn - dir * 1.3, 3.2, 0.12, 2.4, rgb(0x59616a));
-    dec.box(x - 1.6, 0.0 + 0.5, zIn - dir * 0.4, 0.3, 1.0, 0.3, Cblack); dec.box(x + 1.6, 0.5, zIn - dir * 0.4, 0.3, 1.0, 0.3, Cblack);
+    for (const sx of [-1, 1]) { dec.box(x + sx * 1.95, 0.55, zIn - dir * 0.9, 0.22, 1.1, 0.22, Cyellow); for (const by of [0.2, 0.55, 0.9]) dec.box(x + sx * 1.95, by, zIn - dir * 0.9, 0.24, 0.1, 0.24, Cblack); col(x + sx * 1.95 - 0.15, x + sx * 1.95 + 0.15, zIn - dir * 0.9 - 0.15, zIn - dir * 0.9 + 0.15); }
     dec.box(x + DW / 2 + 0.55, 3.2, zIn - dir * 0.35, 0.16, 0.16, 0.1, open ? rgb(0x30e060) : rgb(0xff3030), 1);
     if (open) {
       const L = 13, zc = zIn + dir * (L / 2 - 0.2), wallc = rgb(0xdadee3);
@@ -161,54 +177,31 @@ export function buildEnvironment(w) {
     decCyl.add(x, 0.5, z, 0.22, 1.0, 0.22, 0, 0, 0.95, 0.78, 0.1, 0); circles.push({ x, z, r: 0.2 });
   }
 
-  /* ---------- zona barat: kantor Opname ---------- */
-  const oz0 = w.crossZ - 9.4, oz1 = w.crossZ + 9.4, ox0 = -28, ox1 = -14, OH = 3.4;
-  const tile = e.batch(w.gBox, { tex: e.texture(tileCanvas(), { repeat: true }), cull: false, name: 'lantai-kantor' });
-  tile.add((ox0 + ox1) / 2, 0.03, (oz0 + oz1) / 2, ox1 - ox0, 0.06, oz1 - oz0, 0, 0, 1, 1, 1, 0, 0, 0, 8, 6); tile.finalize();
-  const ow = rgb(0xe9ece9);
-  const oWall = (x0, x1, z0, z1, h = OH, y0 = 0, c = ow) => { dec.box((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2, x1 - x0, h, z1 - z0, c); };
-  oWall(ox0, ox0 + 0.2, oz0, oz1); col(ox0 - 0.1, ox0 + 0.3, oz0, oz1);
-  oWall(ox0, ox1, oz0, oz0 + 0.2); col(ox0, ox1, oz0 - 0.1, oz0 + 0.3);
-  oWall(ox0, ox1, oz1 - 0.2, oz1); col(ox0, ox1, oz1 - 0.3, oz1 + 0.1);
-  const dgap = 1.7;
-  oWall(ox1 - 0.2, ox1, oz0, w.crossZ - dgap, 1.0); oWall(ox1 - 0.2, ox1, w.crossZ + dgap, oz1, 1.0);
-  oWall(ox1 - 0.2, ox1, oz0, w.crossZ - dgap, OH - 2.8, 2.8); oWall(ox1 - 0.2, ox1, w.crossZ + dgap, oz1, OH - 2.8, 2.8);
-  oWall(ox1 - 0.2, ox1, w.crossZ - dgap, w.crossZ + dgap, OH - 2.6, 2.6);
-  glass.box(ox1 - 0.1, 1.9, (oz0 + w.crossZ - dgap) / 2, 0.06, 1.8, w.crossZ - dgap - oz0, [0.55, 0.78, 0.9]);
-  glass.box(ox1 - 0.1, 1.9, (oz1 + w.crossZ + dgap) / 2, 0.06, 1.8, oz1 - w.crossZ - dgap, [0.55, 0.78, 0.9]);
-  col(ox1 - 0.3, ox1 + 0.05, oz0, w.crossZ - dgap); col(ox1 - 0.3, ox1 + 0.05, w.crossZ + dgap, oz1);
-  dec.box((ox0 + ox1) / 2, OH + 0.12, (oz0 + oz1) / 2, ox1 - ox0 + 0.4, 0.24, oz1 - oz0 + 0.4, rgb(0x58606a));
-  sign('office', ox1 + 0.1, 3.0, w.crossZ, 2.6, 1.3, PI / 2 * 1);
-  for (let k = 0; k < 4; k++) dec.box(-21 + (k % 2) * 5, OH - 0.05, w.crossZ - 5 + Math.floor(k / 2) * 10, 1.4, 0.06, 0.5, [1, 0.97, 0.88], 1);
-  // furnitur
-  const wood = rgb(0x9a7a56), screen = rgb(0xaed6ff);
-  const desk = (x, z, yaw = 0, wd = 2.0, dp = 0.9) => { dec.box(x, 0.74, z, wd, 0.06, dp, wood, 0, yaw); dec.box(x, 0.36, z, wd - 0.2, 0.72, dp - 0.2, rgb(0x6a5a46), 0, yaw); };
-  desk(-24.2, oz0 + 2.1, 0, 3.2, 1.0); dec.box(-24.9, 1.1, oz0 + 2.0, 0.6, 0.38, 0.05, screen, 0.9); dec.box(-23.5, 1.1, oz0 + 2.0, 0.6, 0.38, 0.05, screen, 0.9);
-  dec.box(-24.2, 0.5, oz0 + 3.15, 0.5, 0.9, 0.5, Cdark); col(-25.9, -22.5, oz0 + 1.4, oz0 + 2.8);
-  desk(-18.6, oz1 - 2.0, 0, 2.6, 1.0); dec.box(-18.6, 1.1, oz1 - 2.1, 0.7, 0.42, 0.05, screen, 0.9); col(-20, -17.3, oz1 - 2.6, oz1 - 1.3);
-  dec.box(-18.6, 0.5, oz1 - 3.2, 0.5, 0.9, 0.5, Cdark);
-  // meja rapat tengah
-  dec.box(-21, 0.74, w.crossZ, 4.2, 0.08, 1.6, wood); dec.box(-21, 0.36, w.crossZ, 3.9, 0.7, 1.3, rgb(0x6a5a46)); col(-23.2, -18.8, w.crossZ - 1, w.crossZ + 1);
-  for (let k = 0; k < 6; k++) dec.box(-22.5 + (k % 3) * 1.45, 0.82, w.crossZ - 0.35 + Math.floor(k / 3) * 0.7, 0.4, 0.04, 0.3, [1, 1, 0.95]);
-  for (const z of [oz0 + 5.5, oz0 + 6.6, oz1 - 5.5]) { dec.box(-27.2, 0.9, z, 0.9, 1.8, 0.6, rgb(0x8b949c)); col(-27.7, -26.7, z - 0.4, z + 0.4); }
-  dec.box(-27.2, 1.0, oz1 - 7, 0.9, 0.2, 0.6, rgb(0xc9ced3));
-  // papan opname (whiteboard bertekstur, dapat diperbarui)
-  const board = document.createElement('canvas'); board.width = 1024; board.height = 512;
-  const boardTex = e.texture(board, { mip: false });
-  const boardB = e.batch(w.gQuad, { tex: boardTex, cull: false, name: 'papan-opname' });
-  boardB.add(ox0 + 0.35, 1.95, w.crossZ - 1.2, 6.4, 3.2, 1, PI / 2, 0, 1, 1, 1, 0); boardB.finalize();
-  dec.box(ox0 + 0.28, 1.95, w.crossZ - 1.2, 0.08, 3.4, 6.7, rgb(0x7d858d));
-  function setBoard(lines, title) {
-    const g = board.getContext('2d');
-    g.fillStyle = '#f4f6f2'; g.fillRect(0, 0, 1024, 512);
-    g.fillStyle = '#103866'; g.fillRect(0, 0, 1024, 84);
-    g.fillStyle = '#ffd23f'; g.font = '800 44px "Segoe UI", Arial, sans-serif'; g.textAlign = 'left'; g.fillText(title || 'PAPAN STOCK OPNAME — JDC', 28, 58);
-    g.fillStyle = '#1b2430'; g.font = '600 30px "Segoe UI", Arial, sans-serif';
-    lines.slice(0, 8).forEach((l, i) => { g.fillStyle = l.done ? '#1c7c3a' : '#b0232a'; g.fillRect(28, 112 + i * 48, 20, 20); g.fillStyle = '#1b2430'; g.fillText(l.text, 64, 130 + i * 48); });
-    g.strokeStyle = 'rgba(0,0,0,.12)'; for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(20, 104 + i * 48); g.lineTo(1004, 104 + i * 48); g.stroke(); }
-    boardTex.needsUpdate = true;
+  /* ---------- zona barat: area terbuka + mezanin (kantor opname dihapus) ---------- */
+  const OH = 3.4, ox1 = -14;
+  const oWall = (x0, x1, z0, z1, h = OH, y0 = 0, c = rgb(0xe9ece9)) => { dec.box((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2, x1 - x0, h, z1 - z0, c); };
+  const wood = rgb(0x9a7a56);
+  // mezanin dengan rak penyimpanan & railing (seperti foto)
+  {
+    const mx0 = B.x0 + 0.6, mx1 = B.x0 + 10.6, mz0 = 22, mz1 = 46, my = 3.6;
+    dec.box((mx0 + mx1) / 2, my, (mz0 + mz1) / 2, mx1 - mx0, 0.22, mz1 - mz0, rgb(0x8d949b));
+    for (let x = mx0 + 0.3; x <= mx1; x += 5) for (let z = mz0 + 0.3; z <= mz1; z += 6) { dec.box(x, my / 2, z, 0.28, my, 0.28, rgb(0x6c7468)); col(x - 0.2, x + 0.2, z - 0.2, z + 0.2); }
+    for (let z = mz0; z <= mz1; z += 6) dec.box((mx0 + mx1) / 2, my - 0.3, z, mx1 - mx0, 0.3, 0.12, rgb(0x39424e));
+    const rail = (x, z, sx, sz) => { dec.box(x, my + 1.1, z, sx, 0.06, sz, Cyellow); dec.box(x, my + 0.6, z, sx, 0.05, sz, Cyellow); };
+    rail(mx1 - 0.05, (mz0 + mz1) / 2, 0.06, mz1 - mz0); rail((mx0 + mx1) / 2, mz0 + 0.05, mx1 - mx0, 0.06); rail((mx0 + mx1) / 2, mz1 - 0.05, mx1 - mx0, 0.06);
+    for (let z = mz0; z <= mz1; z += 3) dec.box(mx1 - 0.05, my + 0.65, z, 0.06, 1.3, 0.06, Cyellow);
+    // rak penyimpanan di atas
+    for (let z = mz0 + 2; z < mz1 - 3; z += 4.5) {
+      dec.box(mx0 + 1.2, my + 1.1, z + 1.8, 1.0, 2.2, 3.6, rgb(0x6c7468));
+      for (let k = 0; k < 3; k++) for (let j = 0; j < 3; j++) dec.box(mx0 + 1.2, my + 0.45 + k * 0.7, z + 0.6 + j * 1.2, 0.8, 0.5, 1.0, [rgb(0xc9a06a), rgb(0xd9d9d6), rgb(0xb88e55)][(j + k) % 3]);
+    }
+    // tangga
+    for (let i = 0; i < 12; i++) dec.box(mx1 + 0.3 + (11 - i) * 0.0 + 0.5, 0.15 + i * 0.3, mz0 - 0.2 - i * 0.0, 1.0, 0.06, 0.34, Cgrey, 0, 0);
+    dec.box(mx1 + 0.8, my / 2, mz0 - 0.2, 0.06, my, 0.06, Cyellow);
+    sign('exit', mx1 + 0.2, 2.7, mz1 + 0.2, 1.4, 0.7, 0);
   }
-  setBoard([{ text: 'Menunggu penugasan shift…', done: false }]);
+  // papan opname dihapus; setBoard dipertahankan sebagai no-op
+  function setBoard() {}
 
   /* ---------- zona barat: loker & pantry ---------- */
   for (let i = 0; i < 10; i++) { dec.box(B.x0 + 0.6, 1.0, 5 + i * 1.0, 0.6, 2.0, 0.9, i % 2 ? rgb(0x3b6ea5) : rgb(0x4a7fb8)); }
@@ -264,7 +257,7 @@ export function buildEnvironment(w) {
 
   /* ---------- landmark untuk petunjuk ---------- */
   w.landmarks = [
-    { name: 'Kantor Opname', x: -13, z: w.crossZ },
+    { name: 'Titik Briefing (barat)', x: -17, z: w.crossZ },
     { name: 'Lorong silang A/B', x: 20, z: w.crossZ },
     { name: 'Area Receiving (utara)', x: 62, z: -3.2 },
     { name: 'Dock Outbound (selatan)', x: 62, z: w.rackBox.z1 + 8.5 },
@@ -273,7 +266,9 @@ export function buildEnvironment(w) {
     { name: 'Titik Kumpul (barat)', x: B.x0 + 8, z: 70 },
     { name: 'Loker & Pantry (barat)', x: B.x0 + 4, z: 10 },
   ];
-  w.spawn = { x: ox1 + 2.0, z: w.crossZ, yaw: PI / 2 };
+  w.spawn = { x: -13, z: w.crossZ, yaw: PI / 2 };
+  // meja briefing terbuka (tanpa ruangan)
+  dec.box(-19.9, 0.74, w.crossZ + 0.4, 0.9, 0.06, 2.2, wood); dec.box(-19.9, 0.36, w.crossZ + 0.4, 0.7, 0.7, 2.0, rgb(0x6a5a46)); col(-20.5, -19.3, w.crossZ - 0.8, w.crossZ + 1.6);
 
   /* ---------- finalisasi batch statis ---------- */
   dec.finalize(); decCyl.finalize(); glass.finalize(); decal.finalize(); S.finalize(); signs.finalize();
@@ -304,12 +299,20 @@ export function buildEnvironment(w) {
     for (const sx of [-1, 1]) { P(sx * 0.3, 0.17 + lift, -1.9, 0.12, 0.05, 1.5, G); P(sx * 0.62, 0.32, -0.55, 0.22, 0.64, 0.64, K); P(sx * 0.55, 0.28, 0.85, 0.2, 0.56, 0.56, K); P(sx * 0.62, 0.32, -0.55, 0.24, 0.3, 0.3, G); }
     P(0, 2.4, 0.6, 0.16, 0.12, 0.16, [1, 0.5, 0.05], Math.sin(t * 8 + f.id) > 0 ? 1 : 0.25);       // lampu kuning berkedip
     P(-0.3, 0.7, 0.9, 0.16, 0.1, 0.04, [1, 0.2, 0.15], 0.8); P(0.3, 0.7, 0.9, 0.16, 0.1, 0.04, [1, 0.2, 0.15], 0.8);  // lampu belakang
+    if (f.driver) {                                                                                  // operator duduk (helm putih, rompi, tangan di kemudi)
+      const sw = Math.sin(t * 0.9 + f.id) * 0.04;
+      P(-0.12, 1.2, 0.05, 0.16, 0.14, 0.5, K); P(0.12, 1.2, 0.05, 0.16, 0.14, 0.5, K);          // paha
+      P(-0.12, 0.8, -0.2, 0.14, 0.5, 0.14, K); P(0.12, 0.8, -0.2, 0.14, 0.5, 0.14, K);          // betis
+      P(0, 1.62, 0.42, 0.44, 0.6, 0.26, [1, 0.45, 0.05]); P(0, 1.55, 0.42, 0.46, 0.07, 0.28, [0.95, 0.95, 0.85], 0.4); // badan + rompi
+      P(-0.3, 1.58, 0.1, 0.1, 0.1, 0.62, [1, 0.45, 0.05]); P(0.3, 1.58, 0.1, 0.1, 0.1, 0.62, [1, 0.45, 0.05]);
+      P(0, 2.02 + sw, 0.4, 0.22, 0.24, 0.22, rgb(0xc99468)); P(0, 2.17 + sw, 0.4, 0.28, 0.11, 0.28, rgb(0xffffff)); P(0, 2.12 + sw, 0.25, 0.28, 0.03, 0.12, rgb(0xffffff));
+    }
     if (f.carry) { P(0, 0.25 + lift, -1.9, 1.0, 0.12, 1.0, WOOD); P(0, 0.88 + lift, -1.9, 0.92, 1.1, 0.92, f.carry); }
   }
   const worker = (n, x, z, yaw, vest, helmet, skin) => ({ n, x, z, yaw, vest, helmet, skin, base: yaw });
   const npcs = [
-    { id: 'hendra', name: 'Pak Hendra', role: 'Supervisor Gudang', x: ox0 + 2.6, z: w.crossZ + 0.4, yaw: PI / 2, vest: rgb(0xff8a00), helmet: rgb(0xffffff), skin: rgb(0xd9a577), turn: true },
-    { id: 'sari', name: 'Sari', role: 'Admin Inventory', x: -24.2, z: oz0 + 3.0, yaw: PI, vest: rgb(0x3b6ea5), helmet: null, skin: rgb(0xe0b48a), turn: false },
+    { id: 'hendra', name: 'Pak Hendra', role: 'Supervisor Gudang', x: -19, z: w.crossZ + 0.4, yaw: PI / 2, vest: rgb(0xff8a00), helmet: rgb(0xffffff), skin: rgb(0xd9a577), turn: true },
+    { id: 'sari', name: 'Sari', role: 'Admin Inventory', x: -21.5, z: w.crossZ - 3.2, yaw: PI / 2, vest: rgb(0x3b6ea5), helmet: null, skin: rgb(0xe0b48a), turn: false },
     { id: 'rudi', name: 'Rudi', role: 'Operator Forklift', x: chx - 1.5, z: chz0 - 2.0, yaw: -PI / 2, vest: rgb(0xd7e600), helmet: rgb(0xffcc00), skin: rgb(0xc99468), turn: true },
     { id: 'wawan', name: 'Pak Wawan', role: 'Checker Receiving', x: 50, z: -6.3, yaw: 0, vest: rgb(0xff8a00), helmet: rgb(0xf2c200), skin: rgb(0xd2a074), turn: true },
   ];
@@ -323,7 +326,7 @@ export function buildEnvironment(w) {
     P(0, 1.55, 0, 0.24, 0.26, 0.24, n.skin);
     if (n.helmet) { P(0, 1.73, 0, 0.3, 0.12, 0.3, n.helmet); P(0, 1.67, -0.16, 0.3, 0.03, 0.12, n.helmet); } else P(0, 1.72, 0, 0.26, 0.1, 0.26, K);
   }
-  const pathF = (pts, speed, loop, carry, id) => ({ id, pts, speed, loop, carry, x: pts[0][0], z: pts[0][1], heading: 0, seg: 0, dir: 1, lift: 0.1, wait: 0 });
+  const pathF = (pts, speed, loop, carry, id) => ({ driver: true, id, pts, speed, loop, carry, x: pts[0][0], z: pts[0][1], heading: 0, seg: 0, dir: 1, lift: 0.1, wait: 0 });
   const forklifts = [
     pathF([[8, -13.5], [118, -13.5], [118, -5.2], [8, -5.2]], 2.6, true, rgb(0xc9a06a), 1),
     pathF([[12, w.rackBox.z1 + 8.2], [120, w.rackBox.z1 + 8.2], [120, w.rackBox.z1 + 24.5], [12, w.rackBox.z1 + 24.5]], 2.4, true, rgb(0xbdd7ee), 2),

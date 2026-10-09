@@ -289,7 +289,7 @@ export class World {
   }
   blockOf(x, z) {
     const b = this.bounds, rb = this.rackBox;
-    if (x < rb.x0 - 1) return 'Zona Kantor & Loker (barat)';
+    if (x < rb.x0 - 1) return 'Zona Mezanin & Loker (barat)';
     if (x > rb.x1 + 1) return 'Zona QC & Charging (timur)';
     if (z < rb.z0 - 1) return 'Area Receiving (utara)';
     if (z > rb.z1 + 1) return 'Area Staging & Dock Outbound (selatan)';

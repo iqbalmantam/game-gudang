@@ -21,10 +21,6 @@ export class MapView {
     // lantai gudang
     g.fillStyle = '#18283d'; g.fillRect(this.px(B.x0), this.pz(B.z0), (B.x1 - B.x0) * K, (B.z1 - B.z0) * K);
     g.strokeStyle = '#5a7597'; g.lineWidth = 3; g.strokeRect(this.px(B.x0), this.pz(B.z0), (B.x1 - B.x0) * K, (B.z1 - B.z0) * K);
-    // kantor opname
-    const oz0 = w.crossZ - 9.4, oz1 = w.crossZ + 9.4;
-    g.fillStyle = '#243a57'; g.fillRect(this.px(-28), this.pz(oz0), 14 * K, (oz1 - oz0) * K);
-    g.strokeStyle = '#7c97b8'; g.lineWidth = 2; g.strokeRect(this.px(-28), this.pz(oz0), 14 * K, (oz1 - oz0) * K);
     // lorong silang
     g.fillStyle = 'rgba(255,210,63,.07)'; g.fillRect(this.px(rb.x0), this.pz(w.crossZ - 1.7), (rb.x1 - rb.x0) * K, 3.4 * K);
     // sel rak, diwarnai per client

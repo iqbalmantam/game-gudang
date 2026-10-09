@@ -10,7 +10,7 @@ Layout rak (A01–A14, B01–B14, C01–C10, D01–D09, jumlah level, blok clien
 - 3 shift: **Pagi** (3 SKU), **Siang** (4 SKU, forklift), **Malam** (5 SKU, gelap, tanpa bantuan scanner).
 - Mulai dari lokasi sistem (titik merah di peta) → baca catatan & tanya rekan kerja → temukan pallet fisik.
 - Aturan opname: **PINDAI** dulu, cocokkan **SKU dan lot**, baru **KONFIRMASI**. Awas pallet SKU sama lot beda.
-- Lapor ke Pak Hendra di kantor setelah semua barang ketemu. Skor: akurasi, kecepatan, K3 (hindari forklift).
+- Lapor ke Pak Hendra di titik briefing setelah semua barang ketemu. Skor: akurasi, kecepatan, K3 (hindari forklift).
 
 | Tombol | Fungsi |
 |---|---|
