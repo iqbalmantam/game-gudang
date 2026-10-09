@@ -1,5 +1,5 @@
 /* env.js — bangunan gudang, dock, kantor, dekorasi, forklift & NPC (dinamis) */
-import { Chunker, rgb, mix, wallCanvas, slatCanvas, asphaltCanvas, tileCanvas } from './kit.js';
+import { Chunker, rgb, mix, wallCanvas, slatCanvas, asphaltCanvas, tileCanvas, lightmapCanvas } from './kit.js';
 import { mulberry32, KIND, KIND_H } from './items.js';
 import { C } from './world.js';
 import { CUST } from './data.js';
@@ -69,6 +69,7 @@ export function buildEnvironment(w) {
     S.box(x, H - 2.74, z, 0.78, 0.06, 0.78, [1, 0.95, 0.82], 1);
   }
   w.lampCount = lampPos.length;
+  { const lm = lightmapCanvas(w, lampPos, C); e.setLightmap(lm.canvas, lm.bounds); }
 
   /* ---------- marka lantai: garis kuning tepi lorong ---------- */
   const lineY = rgb(0xe5b800);

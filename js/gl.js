@@ -159,7 +159,16 @@ uniform vec3 uEye; uniform vec3 uFwd; uniform float uLamp;
 uniform float uFogNear; uniform float uFogFar; uniform vec3 uFogCol;
 uniform float uAlpha; uniform float uTexOn; uniform sampler2D uTex;
 uniform vec3 uSky; uniform vec3 uGround; uniform vec3 uKey; uniform float uTime;
+uniform sampler2D uLM; uniform vec4 uLMB; uniform float uLMOn; uniform vec2 uRes;
 out vec4 o;
+float h31(vec3 p){ p=fract(p*0.1031); p+=dot(p,p.yzx+33.33); return fract((p.x+p.y)*p.z); }
+float h21(vec2 p){ vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
+float vn(vec3 p){
+  vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(h31(i),h31(i+vec3(1,0,0)),f.x),mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(h31(i+vec3(0,0,1)),h31(i+vec3(1,0,1)),f.x),mix(h31(i+vec3(0,1,1)),h31(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
 void main(){
   vec3 n=normalize(vN);
   vec4 base=vec4(vC.rgb,1.0);
@@ -169,18 +178,73 @@ void main(){
     if(base.a<0.04) discard;
   }
   float emis=vC.a;
+  vec3 toP=vW-uEye; float d=length(toP); vec3 dir=toP/max(d,0.001); vec3 V=-dir;
+  float nearF=1.0-smoothstep(10.0,45.0,d);
+
+  /* kotoran / noda: variasi albedo berskala besar + butiran halus dekat kamera, lebih kotor dekat lantai */
+  float g1=vn(vW*0.33), g2=vn(vW*2.7+7.0);
+  float grime=0.86+0.30*g1;
+  grime*=mix(1.0,0.90+0.20*g2,nearF);
+  grime*=1.0-0.20*exp(-vW.y*0.5)*(0.4+0.6*g1);
+  base.rgb*=mix(grime,1.0,emis);
+
+  /* lightmap: AO kontak di kaki rak (R), kolam cahaya lampu (G), titik lampu untuk pantulan (B) */
+  vec3 lm=vec3(1.0,0.0,0.0);
+  if(uLMOn>0.5) lm=texture(uLM,(vW.xz-uLMB.xy)*uLMB.zw).rgb;
+  bool floorS=(n.y>0.9 && vW.y<0.1);
+  float aoK=floorS?1.0:exp(-vW.y*0.34);
+  float ao=mix(1.0,lm.r,aoK);
+  /* gelap di dalam teluk rak: sisi dalam & bawah balok */
+  float under=smoothstep(0.2,-0.8,n.y);
+  ao*=1.0-0.28*under;
+
+  float lampsOn=smoothstep(0.35,0.7,dot(uSky,vec3(0.3333)));   // siang: lampu gudang menyala; malam: hanya senter
   vec3 L=normalize(vec3(0.35,0.88,0.30));
   float hemi=n.y*0.5+0.5;
-  vec3 light=mix(uGround,uSky,hemi)+uKey*max(dot(n,L),0.0);
-  /* kolam cahaya lampu high-bay (periodik di sumbu z, mengikuti lorong) */
-  vec3 toP=vW-uEye; float d=length(toP); vec3 dir=toP/max(d,0.001);
+  float ndl=max(dot(n,L),0.0);
+  vec3 light=mix(uGround,uSky,hemi)*ao+uKey*ndl*mix(1.0,ao,0.6);
+  /* senter kepala */
   float cone=smoothstep(0.78,0.94,dot(dir,uFwd));
   float att=1.0/(1.0+0.05*d+0.0045*d*d);
-  light+=uLamp*vec3(1.0,0.93,0.78)*cone*att*max(dot(n,-dir),0.0)*2.2;
+  vec3 lampC=vec3(1.0,0.93,0.78);
+  light+=uLamp*lampC*cone*att*max(dot(n,V),0.0)*2.2;
+  /* kolam cahaya lampu high-bay di lantai & rak bawah */
+  light+=lampC*lm.g*lampsOn*0.55*max(n.y*0.7+0.3,0.0)*exp(-vW.y*0.22);
   vec3 col=base.rgb*light;
-  col=mix(col,base.rgb,emis);
+
+  /* kilap: lantai epoksi + sedikit sheen (shrink-wrap, cat) di permukaan lain */
+  float gloss=floorS?(0.50+0.50*g1)*(0.75+0.25*g2):0.10;
+  float sh=floorS?46.0:20.0;
+  vec3 Hh=normalize(L+V);
+  vec3 spec=uKey*pow(max(dot(n,Hh),0.0),sh)*gloss*3.0;
+  spec+=lampC*uLamp*pow(max(dot(n,V),0.0),sh)*cone*att*gloss*1.4;
+  float fres=0.04+0.96*pow(1.0-max(dot(n,V),0.0),5.0);
+  if(floorS){
+    vec3 R=reflect(dir,n);
+    if(R.y>0.03){
+      float t=(18.3-vW.y)/R.y;
+      vec2 hp=vW.xz+R.xz*t;
+      float lod=clamp(log2(max(t*0.6,1.0)),0.0,5.0);
+      float lb=textureLod(uLM,(hp-uLMB.xy)*uLMB.zw,lod).b*uLMOn;
+      spec+=lampC*lb*(0.35+fres*2.2)*gloss*lampsOn*3.2*(1.0-smoothstep(60.0,140.0,t));
+    }
+  } else {
+    spec+=uSky*fres*0.10*hemi*ao;
+  }
+  col+=spec*(1.0-emis);
+
+  col=mix(col,base.rgb*1.7,emis);
+  /* tone mapping filmis */
+  col=aces(col*mix(0.8,1.08,lampsOn));
+  col=mix(vec3(dot(col,vec3(0.299,0.587,0.114))),col,0.9);
+  /* kabut + hamburan debu di berkas senter */
   float f=clamp((d-uFogNear)/(uFogFar-uFogNear),0.0,1.0);
   col=mix(col,uFogCol,f*f);
+  col+=lampC*uLamp*cone*(1.0-exp(-d*0.03))*0.035;
+  /* vinyet + grain film */
+  vec2 sp=gl_FragCoord.xy/uRes-0.5;
+  col*=1.0-0.34*smoothstep(0.30,0.95,length(sp)*1.35);
+  col+=(h21(gl_FragCoord.xy+fract(uTime)*131.0)-0.5)*0.028;
   o=vec4(clamp(col,0.0,1.0),uAlpha*base.a);
 }`;
 
@@ -294,8 +358,9 @@ export class Engine {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     this.prog = p; gl.useProgram(p);
     this.u = {};
-    for (const n of ['uVP', 'uEye', 'uFwd', 'uLamp', 'uFogNear', 'uFogFar', 'uFogCol', 'uAlpha', 'uTexOn', 'uTex', 'uSky', 'uGround', 'uKey', 'uTime']) this.u[n] = gl.getUniformLocation(p, n);
-    gl.uniform1i(this.u.uTex, 0);
+    for (const n of ['uVP', 'uEye', 'uFwd', 'uLamp', 'uFogNear', 'uFogFar', 'uFogCol', 'uAlpha', 'uTexOn', 'uTex', 'uSky', 'uGround', 'uKey', 'uTime', 'uLM', 'uLMB', 'uLMOn', 'uRes']) this.u[n] = gl.getUniformLocation(p, n);
+    gl.uniform1i(this.u.uTex, 0); gl.uniform1i(this.u.uLM, 1);
+    this.lmTex = null; this.lmB = [0, 0, 1, 1];
     this.sky = [0.78, 0.82, 0.9]; this.ground = [0.34, 0.33, 0.33]; this.key = [0.32, 0.30, 0.26];
     this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
     gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
@@ -313,6 +378,19 @@ export class Engine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, w); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, w);
     if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(this.aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
     return t;
+  }
+  /* lightmap lantai: canvas RGBA -> tekstur unit 1, b = [x0, z0, lebar, dalam] dalam meter */
+  setLightmap(canvas, b) {
+    const gl = this.gl, t = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    this.lmTex = t; this.lmB = [b[0], b[1], 1 / b[2], 1 / b[3]];
   }
   batch(geo, opt) { const b = new Batch(this, geo, opt); this.batches.push(b); return b; }
   resize(cssW, cssH, dpr) {
@@ -336,6 +414,9 @@ export class Engine {
     gl.uniform1f(u.uLamp, this.lamp); gl.uniform1f(u.uFogNear, this.fogNear); gl.uniform1f(u.uFogFar, this.fogFar);
     gl.uniform3fv(u.uFogCol, this.fogCol); gl.uniform3fv(u.uSky, this.sky); gl.uniform3fv(u.uGround, this.ground); gl.uniform3fv(u.uKey, this.key);
     gl.uniform1f(u.uTime, time);
+    gl.uniform2f(u.uRes, this.canvas.width, this.canvas.height);
+    gl.uniform4fv(u.uLMB, this.lmB); gl.uniform1f(u.uLMOn, this.lmTex ? 1 : 0);
+    if (this.lmTex) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.lmTex); gl.activeTexture(gl.TEXTURE0); }
     let draws = 0, tris = 0;
     const vis = (b) => {
       if (!b.visible || !b.n) return false;

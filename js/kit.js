@@ -126,3 +126,47 @@ export function buildAtlas(rackInfo) {
   });
   return A;
 }
+
+/* ---------- lightmap lantai ----------
+   R = oklusi kontak di kaki rak (1 = terang), G = kolam cahaya lampu high-bay, B = titik lampu (untuk pantulan di lantai). */
+export function lightmapCanvas(w, lampPos, C) {
+  const Bd = w.bounds, W = Bd.x1 - Bd.x0, D = Bd.z1 - Bd.z0;
+  const ppm = Math.min(6, 4096 / Math.max(W, D)), cw = Math.ceil(W * ppm), ch = Math.ceil(D * ppm);
+  const mk = (fill) => { const c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d'); g.fillStyle = fill; g.fillRect(0, 0, cw, ch); return [c, g]; };
+  const X = (x) => (x - Bd.x0) * ppm, Z = (z) => (z - Bd.z0) * ppm;
+  // --- AO ---
+  const [ao, ga] = mk('#fff');
+  ga.fillStyle = '#000';
+  for (const [col, rows] of w.colCells) {
+    const x = w.xc.get(col); if (x === undefined) continue;
+    const rs = [...rows.keys()].sort((a, b) => a - b);
+    let i = 0;
+    while (i < rs.length) {
+      let j = i; while (j + 1 < rs.length && rs[j + 1] - rs[j] <= 1) j++;
+      const z0 = w.zOf(rs[i]) - C.CELL / 2, z1 = w.zOf(rs[j]) + C.CELL / 2;
+      for (let k = 5; k >= 0; k--) {
+        const e = k * 0.28; ga.globalAlpha = k === 0 ? 0.55 : 0.13;
+        ga.fillRect(X(x - C.DEPTH / 2 - e), Z(z0 - e), (C.DEPTH + e * 2) * ppm, (z1 - z0 + e * 2) * ppm);
+      }
+      i = j + 1;
+    }
+  }
+  ga.globalAlpha = 1;
+  // --- kolam cahaya + titik lampu ---
+  const [pool, gp] = mk('#000'), [lamp, gl_] = mk('#000');
+  gp.globalCompositeOperation = 'lighter'; gl_.globalCompositeOperation = 'lighter';
+  for (const [x, z] of lampPos) {
+    let r = 7 * ppm, g = gp.createRadialGradient(X(x), Z(z), 0, X(x), Z(z), r);
+    g.addColorStop(0, 'rgba(255,255,255,.55)'); g.addColorStop(0.5, 'rgba(255,255,255,.2)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    gp.fillStyle = g; gp.fillRect(X(x) - r, Z(z) - r, r * 2, r * 2);
+    r = 0.9 * ppm; g = gl_.createRadialGradient(X(x), Z(z), 0, X(x), Z(z), r);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.6, 'rgba(255,255,255,.6)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    gl_.fillStyle = g; gl_.fillRect(X(x) - r, Z(z) - r, r * 2, r * 2);
+  }
+  const out = document.createElement('canvas'); out.width = cw; out.height = ch;
+  const go = out.getContext('2d'), od = go.createImageData(cw, ch);
+  const A = ga.getImageData(0, 0, cw, ch).data, P = gp.getImageData(0, 0, cw, ch).data, Lp = gl_.getImageData(0, 0, cw, ch).data;
+  for (let i = 0; i < od.data.length; i += 4) { od.data[i] = A[i]; od.data[i + 1] = P[i]; od.data[i + 2] = Lp[i]; od.data[i + 3] = 255; }
+  go.putImageData(od, 0, 0);
+  return { canvas: out, bounds: [Bd.x0, Bd.z0, W, D] };
+}
