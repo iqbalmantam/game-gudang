@@ -287,18 +287,23 @@ export function buildEnvironment(w) {
     const cs = Math.cos(yaw), sn = Math.sin(yaw);
     b.add(px + cs * lx + sn * lz, py + ly, pz - sn * lx + cs * lz, sx, sy, sz, yaw, 0, c[0], c[1], c[2], emis);
   };
-  const Y = rgb(0xf2a900), K = rgb(0x2a2d31), G = rgb(0x5a6068), WOOD = rgb(0xb98a55);
+  const Y = rgb(0xe4501c), K = rgb(0x25282c), G = rgb(0x4d535a), WOOD = rgb(0xb98a55), CHR = rgb(0x9aa1a8);
   function drawForklift(f, t) {
     const yaw = -f.heading, lift = f.lift;
     const P = (lx, ly, lz, sx, sy, sz, c, em) => part(dynBox, f.x, 0, f.z, yaw, lx, ly, lz, sx, sy, sz, c, em);
-    P(0, 0.6, 0.15, 1.1, 0.55, 1.7, Y); P(0, 0.88, 0.98, 1.1, 0.78, 0.5, K); P(0, 0.55, -0.82, 1.0, 0.42, 0.2, Y);
-    P(0, 1.0, 0.3, 0.5, 0.12, 0.5, K); P(0, 1.35, 0.52, 0.5, 0.6, 0.1, K);
-    for (const sx of [-1, 1]) { P(sx * 0.5, 1.55, -0.38, 0.05, 1.3, 0.05, K); P(sx * 0.5, 1.55, 0.72, 0.05, 1.3, 0.05, K); }
-    P(0, 2.22, 0.17, 1.2, 0.06, 1.2, K);
-    for (const sx of [-1, 1]) P(sx * 0.28, 1.25, -1.08, 0.07, 2.4, 0.1, G);
-    P(0, 2.4, -1.08, 0.7, 0.08, 0.1, G); P(0, 0.58 + lift, -1.15, 0.9, 0.5, 0.06, G);
-    for (const sx of [-1, 1]) { P(sx * 0.3, 0.17 + lift, -1.9, 0.12, 0.05, 1.5, G); P(sx * 0.62, 0.32, -0.55, 0.22, 0.64, 0.64, K); P(sx * 0.55, 0.28, 0.85, 0.2, 0.56, 0.56, K); }
-    P(0, 2.34, 0.6, 0.16, 0.12, 0.16, [1, 0.5, 0.05], Math.sin(t * 8 + f.id) > 0 ? 1 : 0.25);
+    // bodi oranye-merah (gaya forklift listrik 3 roda), kap belakang hitam
+    P(0, 0.62, 0.1, 1.1, 0.6, 1.5, Y); P(0, 0.98, 0.1, 1.04, 0.1, 1.46, K);                       // sasis + tutup atas
+    P(0, 0.85, 0.98, 1.12, 0.95, 0.52, Y); P(0, 1.36, 0.98, 1.1, 0.12, 0.5, K);                  // counterweight + kap
+    P(0, 0.52, -0.86, 1.04, 0.5, 0.26, Y); P(0, 0.3, 0.1, 1.06, 0.16, 1.5, K);                    // kaki depan & rok
+    P(0, 1.1, 0.35, 0.46, 0.1, 0.5, K); P(0, 1.46, 0.6, 0.46, 0.62, 0.1, K);                       // jok + sandaran
+    P(0, 1.28, -0.28, 0.06, 0.5, 0.06, K); P(0, 1.55, -0.34, 0.34, 0.04, 0.34, K);                  // kolom & roda kemudi
+    for (const sx of [-1, 1]) { P(sx * 0.52, 1.62, -0.45, 0.06, 1.28, 0.06, K); P(sx * 0.52, 1.62, 0.78, 0.06, 1.28, 0.06, K); }  // tiang pelindung kepala
+    P(0, 2.27, 0.17, 1.14, 0.05, 1.3, K); for (const z of [-0.2, 0.17, 0.54]) P(0, 2.3, z, 1.1, 0.03, 0.05, K);
+    for (const sx of [-1, 1]) { P(sx * 0.3, 1.25, -1.08, 0.09, 2.4, 0.12, K); P(sx * 0.3, 1.25 + lift * 0.5, -1.12, 0.05, 2.0, 0.05, CHR); }  // tiang mast + rantai
+    P(0, 2.4, -1.08, 0.7, 0.1, 0.12, K); P(0, 1.1, -1.08, 0.7, 0.07, 0.12, K); P(0, 0.58 + lift, -1.16, 0.92, 0.5, 0.07, G);
+    for (const sx of [-1, 1]) { P(sx * 0.3, 0.17 + lift, -1.9, 0.12, 0.05, 1.5, G); P(sx * 0.62, 0.32, -0.55, 0.22, 0.64, 0.64, K); P(sx * 0.55, 0.28, 0.85, 0.2, 0.56, 0.56, K); P(sx * 0.62, 0.32, -0.55, 0.24, 0.3, 0.3, G); }
+    P(0, 2.4, 0.6, 0.16, 0.12, 0.16, [1, 0.5, 0.05], Math.sin(t * 8 + f.id) > 0 ? 1 : 0.25);       // lampu kuning berkedip
+    P(-0.3, 0.7, 0.9, 0.16, 0.1, 0.04, [1, 0.2, 0.15], 0.8); P(0.3, 0.7, 0.9, 0.16, 0.1, 0.04, [1, 0.2, 0.15], 0.8);  // lampu belakang
     if (f.carry) { P(0, 0.25 + lift, -1.9, 1.0, 0.12, 1.0, WOOD); P(0, 0.88 + lift, -1.9, 0.92, 1.1, 0.92, f.carry); }
   }
   const worker = (n, x, z, yaw, vest, helmet, skin) => ({ n, x, z, yaw, vest, helmet, skin, base: yaw });
