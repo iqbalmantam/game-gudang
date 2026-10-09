@@ -50,6 +50,9 @@ export class World {
     this.gFloorQuad = B((m) => m.floorQuad());
     const W = [1, 1, 1];
     this.gPalBase = B((m) => { const wood = hex(0xb98a55), dark = hex(0x8a6238); m.box(0, 0.115, 0, 0.98, 0.05, 0.98, wood); m.box(-0.38, 0.045, 0, 0.14, 0.09, 0.98, dark); m.box(0.38, 0.045, 0, 0.14, 0.09, 0.98, dark); });
+    // palet plastik biru (LOGISALL) & tali merah pembungkus
+    this.gPalBlue = B((m) => { const bl = hex(0x1f4fa8), dk = hex(0x173c80); m.box(0, 0.115, 0, 1.0, 0.05, 1.0, bl); for (const x of [-0.4, 0, 0.4]) m.box(x, 0.045, 0, 0.18, 0.09, 1.0, dk); m.box(0, 0.095, 0.5, 0.5, 0.03, 0.01, hex(0xeeeeee)); });
+    this.gStrap = B((m) => { const r = hex(0xc8181e); for (const x of [-0.22, 0.22]) m.box(x, 0.55, 0, 0.035, 1.12, 0.945, r); m.box(0, 1.0, 0, 0.945, 0.04, 0.945, r); m.box(0, 0.4, 0, 0.945, 0.04, 0.945, r); });
     this.gKinds = [
       B((m) => { for (const ix of [-1, 1]) for (const iz of [-1, 1]) m.box(ix * 0.235, 0.55, iz * 0.235, 0.44, 1.1, 0.44, W); }),
       B((m) => { for (const ix of [-1, 1]) for (const iz of [-1, 1]) m.cyl(ix * 0.25, 0.46, iz * 0.25, 0.22, 0.92, 7, W); }),
@@ -222,18 +225,20 @@ export class World {
     let ch = this.pal.get(k);
     if (!ch) {
       const e = this.eng, o = { cap: 128 };
-      ch = { base: e.batch(this.gPalBase, { ...o, name: 'pallet-kayu' }), kinds: this.gKinds.map((g) => e.batch(g, { ...o, name: 'barang' })), label: e.batch(this.gQuad, { ...o, tex: this.atlasTex, name: 'label' }) };
+      ch = { base: e.batch(this.gPalBase, { ...o, name: 'pallet-kayu' }), kinds: this.gKinds.map((g) => e.batch(g, { ...o, name: 'barang' })), label: e.batch(this.gQuad, { ...o, tex: this.atlasTex, name: 'label' }), blue: e.batch(this.gPalBlue, { ...o, name: 'pallet-kayu' }), strap: e.batch(this.gStrap, { ...o, name: 'barang' }) };
       this.pal.set(k, ch);
     }
     return ch;
   }
   rebuildInstances() {
-    for (const ch of this.pal.values()) { ch.base.clear(); ch.kinds.forEach((b) => b.clear()); ch.label.clear(); }
+    for (const ch of this.pal.values()) { ch.base.clear(); ch.blue.clear(); ch.strap.clear(); ch.kinds.forEach((b) => b.clear()); ch.label.clear(); }
     const bar = this.atlas.uv('bar'), white = this.atlas.uv('white');
     const brand = CUST.map((c) => rgb(parseInt(c.color.slice(1), 16)));
     const add = (s, label) => {
       const ch = this._chunk(s.x, s.z);
-      ch.base.add(s.x, s.y0, s.z);
+      const blue = !label || (s.col + s.row * 7 + s.lvl) % 4 === 0;
+      (blue ? ch.blue : ch.base).add(s.x, s.y0, s.z, 1, 1, 1, s.jyaw, 0, 1, 1, 1, 0);
+      if (s.kind === 3 && s.tint[0] < 0.3) ch.strap.add(s.x + s.jx, s.y0 + C.PAL, s.z + s.jz, 1, 1, 1, s.jyaw, 0, 1, 1, 1, 0);
       ch.kinds[s.kind].add(s.x + s.jx, s.y0 + C.PAL, s.z + s.jz, 1, 1, 1, s.jyaw, 0, s.tint[0], s.tint[1], s.tint[2], 0);
       if (label) {
         ch.label.add(s.x + s.face * 0.51, s.y0 + C.PAL + 0.4, s.z, 0.3, 0.2, 1, s.face * Math.PI / 2, 0, 1, 1, 1, 0, bar[0], bar[1], bar[2], bar[3]);
@@ -246,7 +251,7 @@ export class World {
     };
     for (const s of this.slots) if (!s.nw && !s.empty) add(s, true);
     for (const d of this.decorPallets) add(d, false);
-    for (const ch of this.pal.values()) { ch.base.finalize(); ch.kinds.forEach((b) => b.finalize()); ch.label.finalize(); }
+    for (const ch of this.pal.values()) { ch.base.finalize(); ch.blue.finalize(); ch.strap.finalize(); ch.kinds.forEach((b) => b.finalize()); ch.label.finalize(); }
   }
 
   /* ---------- pencarian & deskripsi ---------- */

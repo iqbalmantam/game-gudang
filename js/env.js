@@ -285,9 +285,24 @@ export function buildEnvironment(w) {
     b.add(px + cs * lx + sn * lz, py + ly, pz - sn * lx + cs * lz, sx, sy, sz, yaw, 0, c[0], c[1], c[2], emis);
   };
   const Y = rgb(0xe4501c), K = rgb(0x25282c), G = rgb(0x4d535a), WOOD = rgb(0xb98a55), CHR = rgb(0x9aa1a8);
+  function drawPalletTruck(f, t) {
+    const yaw = -f.heading, P = (lx, ly, lz, sx, sy, sz, c, em) => part(dynBox, f.x, 0, f.z, yaw, lx, ly, lz, sx, sy, sz, c, em);
+    const R = rgb(0xc4202a);
+    P(0, 0.42, 0.45, 0.62, 0.62, 0.6, R); P(0, 0.78, 0.45, 0.6, 0.08, 0.58, K);                 // bodi merah + tutup
+    for (const sx of [-1, 1]) { P(sx * 0.27, 0.12, -0.5, 0.2, 0.1, 1.6, G); P(sx * 0.27, 0.07, -1.3, 0.2, 0.06, 0.3, K); P(sx * 0.2, 0.1, 0.62, 0.22, 0.2, 0.22, K); }
+    P(0, 0.2, -0.2, 0.62, 0.3, 0.4, R);
+    P(0, 1.05, 0.15, 0.05, 0.6, 0.05, K); P(0, 1.38, 0.1, 0.5, 0.06, 0.08, K);                  // tuas kemudi
+    if (f.carry) { P(0, 0.25, -0.75, 0.9, 0.12, 1.0, rgb(0x1f4fa8)); P(0, 0.8, -0.75, 0.86, 1.0, 0.94, f.carry); }
+    P(0, 1.1, 0.95, 0.4, 0.55, 0.24, [1, 0.45, 0.05]); P(0, 1.55, 0.95, 0.22, 0.24, 0.22, rgb(0xc99468)); P(0, 1.72, 0.95, 0.28, 0.1, 0.28, rgb(0xffffff)); // operator berdiri di belakang
+    P(-0.12, 0.45, 0.95, 0.15, 0.9, 0.18, K); P(0.12, 0.45, 0.95, 0.15, 0.9, 0.18, K);
+  }
   function drawForklift(f, t) {
+    if (f.pt) return drawPalletTruck(f, t);
     const yaw = -f.heading, lift = f.lift;
     const P = (lx, ly, lz, sx, sy, sz, c, em) => part(dynBox, f.x, 0, f.z, yaw, lx, ly, lz, sx, sy, sz, c, em);
+    P(0, 0.9, 0.7, 1.12, 0.06, 0.03, [0.95, 0.95, 0.95]); P(0, 0.75, 0.38, 0.4, 0.14, 0.02, [0.95, 0.95, 0.95]);   // tulisan TOYOTA & stiker (putih)
+    P(0.5, 1.5, -0.55, 0.05, 0.22, 0.12, K); P(0.56, 1.52, -0.58, 0.02, 0.18, 0.1, CHR);                            // spion
+    P(-0.2, 1.4, 0.72, 0.1, 0.4, 0.1, [0.75, 0.1, 0.1]);                                                           // APAR
     // bodi oranye-merah (gaya forklift listrik 3 roda), kap belakang hitam
     P(0, 0.62, 0.1, 1.1, 0.6, 1.5, Y); P(0, 0.98, 0.1, 1.04, 0.1, 1.46, K);                       // sasis + tutup atas
     P(0, 0.85, 0.98, 1.12, 0.95, 0.52, Y); P(0, 1.36, 0.98, 1.1, 0.12, 0.5, K);                  // counterweight + kap
@@ -328,12 +343,14 @@ export function buildEnvironment(w) {
     P(0, 1.55, 0, 0.24, 0.26, 0.24, n.skin);
     if (n.helmet) { P(0, 1.73, 0, 0.3, 0.12, 0.3, n.helmet); P(0, 1.67, -0.16, 0.3, 0.03, 0.12, n.helmet); } else P(0, 1.72, 0, 0.26, 0.1, 0.26, K);
   }
-  const pathF = (pts, speed, loop, carry, id) => ({ driver: true, id, pts, speed, loop, carry, x: pts[0][0], z: pts[0][1], heading: 0, seg: 0, dir: 1, lift: 0.1, wait: 0 });
+  const pathF = (pts, speed, loop, carry, id, pt) => ({ pt, driver: !pt, id, pts, speed, loop, carry, x: pts[0][0], z: pts[0][1], heading: 0, seg: 0, dir: 1, lift: 0.1, wait: 0 });
   const forklifts = [
     pathF([[8, -13.5], [118, -13.5], [118, -5.2], [8, -5.2]], 2.6, true, rgb(0xc9a06a), 1),
     pathF([[12, w.rackBox.z1 + 8.2], [120, w.rackBox.z1 + 8.2], [120, w.rackBox.z1 + 24.5], [12, w.rackBox.z1 + 24.5]], 2.4, true, rgb(0xbdd7ee), 2),
     pathF([[-10.5, w.crossZ], [34, w.crossZ]], 2.3, false, null, 3),
     pathF([[ex + 0.5, 28], [ex + 0.5, 74]], 2.0, false, rgb(0xe8c19a), 4),
+    pathF([[10, -2.2], [100, -2.2]], 1.6, false, rgb(0xd9d0c0), 5, true),
+    pathF([[14, w.rackBox.z1 + 14], [88, w.rackBox.z1 + 14]], 1.5, false, null, 6, true),
   ];
   // parkir forklift di charging
   const parked = [0, 1, 2, 3].map((i) => ({ id: 20 + i, x: chx + 1.8, z: chz0 + i * 3.4 + 0.2, heading: PI / 2, lift: 0.1, carry: null }));
