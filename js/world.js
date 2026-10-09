@@ -103,7 +103,13 @@ export class World {
     const info = this.racks.map((r) => ({ code: r.code, nw: r.nw, sub: r.sub }));
     this.atlas = buildAtlas(info);
     this.atlasTex = this.eng.texture(this.atlas.canvas, { mip: true });
-    this.floorTex = this.eng.texture(concreteCanvas(), { repeat: true });
+    const cc = concreteCanvas();
+    this.floorTex = this.eng.texture(cc, { repeat: true });
+    // detail retakan/goresan lantai dari foto referensi (high-pass), ditumpuk di atas beton prosedural
+    const im = new Image(); im.onload = () => {
+      const g = cc.getContext('2d'); g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.5; g.drawImage(im, 0, 0, cc.width, cc.height); g.restore();
+      this.floorTex.needsUpdate = true;
+    }; im.src = 'tex/lantai.png';
   }
 
   /* ---------- struktur rak (tiang, balok, penyilang) ---------- */

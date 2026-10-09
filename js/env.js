@@ -33,7 +33,9 @@ export function buildEnvironment(w) {
     const alongX = (x1 - x0) >= (z1 - z0), len = alongX ? x1 - x0 : z1 - z0, th = alongX ? z1 - z0 : x1 - x0;
     wallB.add((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2, len, h, th, alongX ? 0 : PI / 2, 0, 1, 1, 1, 0, 0, 0, len / 4, h / 4);
   };
-  const slatTex = e.texture(slatCanvas(), { repeat: true });
+  const slatCv = slatCanvas();
+  const slatTex = e.texture(slatCv, { repeat: true });
+  { const im = new Image(); im.onload = () => { const g = slatCv.getContext('2d'); g.globalAlpha = 0.9; g.drawImage(im, 0, 0, slatCv.width, slatCv.height); slatTex.needsUpdate = true; }; im.src = 'tex/shutter.jpg'; }
   const slatB = e.batch(w.gBox, { tex: slatTex, cull: false, name: 'rolling-door' });
   const T = 0.5;
   wall(B.x0 - T, B.x0, B.z0 - T, B.z1 + T); wall(B.x1, B.x1 + T, B.z0 - T, B.z1 + T);
