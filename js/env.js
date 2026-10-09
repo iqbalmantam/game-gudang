@@ -65,20 +65,25 @@ export function buildEnvironment(w) {
   for (let x = w.rackBox.x0; x < w.rackBox.x1; x += 10) for (const z of [B.z0 + 8, B.z0 + 18, w.rackBox.z1 + 8, w.rackBox.z1 + 18, w.rackBox.z1 + 28]) lampPos.push([x, z]);
   for (const [x, z] of lampPos) {
     S.box(x, H - 1.4, z, 0.04, 2.2, 0.04, steel);
-    S.box(x, H - 2.6, z, 0.9, 0.2, 0.9, rgb(0x20262d));
-    S.box(x, H - 2.74, z, 0.78, 0.06, 0.78, [1, 0.95, 0.82], 1);
+    S.box(x, H - 2.6, z, 0.5, 0.14, 3.6, rgb(0x20262d));
+    S.box(x, H - 2.70, z, 0.36, 0.05, 3.3, [0.93, 0.97, 1.0], 1);
   }
   w.lampCount = lampPos.length;
-  { const lm = lightmapCanvas(w, lampPos, C); e.setLightmap(lm.canvas, lm.bounds); }
+  { const lm = lightmapCanvas(w, lampPos, C); e.setLightmap(lm.canvas, lm.bounds); e.setLamps(lampPos, H - 2.7); }
   /* halo cahaya di bawah tiap lampu (dua bidang tegak bersilang + satu bidang datar) */
   const glowOpt = { size: 40, transparent: true, alpha: 0.9, tex: e.texture(glowCanvas()), name: 'halo' };
   const glowV = new Chunker(e, w.gQuad, glowOpt), glowH = new Chunker(e, w.gFloorQuad, glowOpt);
   for (const [x, z] of lampPos) {
-    glowV.add(x, H - 2.9, z, 7, 7, 1, 0, 0, 1, 0.95, 0.82, 1); glowV.add(x, H - 2.9, z, 7, 7, 1, PI / 2, 0, 1, 0.95, 0.82, 1);
-    glowH.add(x, H - 2.9, z, 7, 1, 7, 0, 0, 1, 0.95, 0.82, 1);
+    glowV.add(x, H - 2.9, z, 6, 6, 1, 0, 0, 0.92, 0.96, 1, 1); glowV.add(x, H - 2.9, z, 6, 6, 1, PI / 2, 0, 0.92, 0.96, 1, 1);
+    glowH.add(x, H - 2.9, z, 6, 1, 6, 0, 0, 0.92, 0.96, 1, 1);
   }
   glowV.finalize(); glowH.finalize();
-  const setGlow = (on) => { for (const b of [...glowV.map.values(), ...glowH.map.values()]) b.visible = on && b.n > 0; };
+  /* jendela tinggi & sempit di dinding (cahaya siang) */
+  const winC = new Chunker(e, w.gBox, { size: 40, name: 'jendela' });
+  for (let x = B.x0 + 5; x < B.x1 - 3; x += 7.5) { winC.box(x, 14.5, B.z0 + 0.04, 1.3, 6.5, 0.05, [0.82, 0.93, 1.0], 1); winC.box(x, 14.5, B.z1 - 0.04, 1.3, 6.5, 0.05, [0.82, 0.93, 1.0], 1); }
+  for (let z = B.z0 + 5; z < B.z1 - 3; z += 7.5) { winC.box(B.x0 + 0.04, 14.5, z, 0.05, 6.5, 1.3, [0.82, 0.93, 1.0], 1); winC.box(B.x1 - 0.04, 14.5, z, 0.05, 6.5, 1.3, [0.82, 0.93, 1.0], 1); }
+  winC.finalize();
+  const setGlow = (on) => { for (const b of [...glowV.map.values(), ...glowH.map.values(), ...winC.map.values()]) b.visible = on && b.n > 0; };
 
   /* ---------- marka lantai: garis kuning tepi lorong ---------- */
   const lineY = rgb(0xe5b800);
@@ -193,7 +198,6 @@ export function buildEnvironment(w) {
   const boardB = e.batch(w.gQuad, { tex: boardTex, cull: false, name: 'papan-opname' });
   boardB.add(ox0 + 0.35, 1.95, w.crossZ - 1.2, 6.4, 3.2, 1, PI / 2, 0, 1, 1, 1, 0); boardB.finalize();
   dec.box(ox0 + 0.28, 1.95, w.crossZ - 1.2, 0.08, 3.4, 6.7, rgb(0x7d858d));
-  const gl = e.gl;
   function setBoard(lines, title) {
     const g = board.getContext('2d');
     g.fillStyle = '#f4f6f2'; g.fillRect(0, 0, 1024, 512);
@@ -202,8 +206,7 @@ export function buildEnvironment(w) {
     g.fillStyle = '#1b2430'; g.font = '600 30px "Segoe UI", Arial, sans-serif';
     lines.slice(0, 8).forEach((l, i) => { g.fillStyle = l.done ? '#1c7c3a' : '#b0232a'; g.fillRect(28, 112 + i * 48, 20, 20); g.fillStyle = '#1b2430'; g.fillText(l.text, 64, 130 + i * 48); });
     g.strokeStyle = 'rgba(0,0,0,.12)'; for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(20, 104 + i * 48); g.lineTo(1004, 104 + i * 48); g.stroke(); }
-    gl.bindTexture(gl.TEXTURE_2D, boardTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, board);
+    boardTex.needsUpdate = true;
   }
   setBoard([{ text: 'Menunggu penugasan shift…', done: false }]);
 

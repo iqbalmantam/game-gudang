@@ -1,43 +1,16 @@
-/* gl.js — mesin WebGL2 mini (tanpa library) untuk Game Gudang.
-   Fitur: instancing, warna per-vertex & per-instance, tekstur (atlas), kabut,
-   lampu kepala (spotlight), culling frustum per-batch, objek transparan. */
+/* gl.js — lapisan render OPNAME berbasis three.js (PBR).
+   Mempertahankan API lama (MeshBuilder, Atlas, Engine.batch/geo/texture) sehingga world.js/env.js tetap sama.
+   Fitur: material PBR ber-instance, lampu titik terdekat, senter berbayangan, IBL, SSAO (GTAO), bloom, tone mapping filmis. */
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export const hex = (h) => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255];
-
-/* ---------- matriks (column-major) ---------- */
-export function mat4Persp(fov, aspect, near, far) {
-  const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
-  return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
-}
-export function mat4Look(ex, ey, ez, tx, ty, tz) {
-  let zx = ex - tx, zy = ey - ty, zz = ez - tz;
-  let l = Math.hypot(zx, zy, zz) || 1; zx /= l; zy /= l; zz /= l;
-  // up = (0,1,0): x = up × z
-  let xx = zz, xy = 0, xz = -zx;
-  l = Math.hypot(xx, xy, xz) || 1; xx /= l; xy /= l; xz /= l;
-  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
-  return new Float32Array([xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0,
-    -(xx * ex + xy * ey + xz * ez), -(yx * ex + yy * ey + yz * ez), -(zx * ex + zy * ey + zz * ez), 1]);
-}
-export function mat4Mul(a, b) {
-  const o = new Float32Array(16);
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
-    let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
-    o[c * 4 + r] = s;
-  }
-  return o;
-}
-function frustumPlanes(m) {
-  const P = [];
-  const row = (i) => [m[i], m[4 + i], m[8 + i], m[12 + i]];
-  const r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
-  const comb = (a, b, s) => [a[0] + s * b[0], a[1] + s * b[1], a[2] + s * b[2], a[3] + s * b[3]];
-  for (const p of [comb(r3, r0, 1), comb(r3, r0, -1), comb(r3, r1, 1), comb(r3, r1, -1), comb(r3, r2, 1), comb(r3, r2, -1)]) {
-    const l = Math.hypot(p[0], p[1], p[2]) || 1;
-    P.push([p[0] / l, p[1] / l, p[2] / l, p[3] / l]);
-  }
-  return P;
-}
 
 /* ---------- pembangun mesh ---------- */
 const FACES = [
@@ -130,149 +103,50 @@ export class Atlas {
   uv(name) { return this.map.get(name); }
 }
 
-/* ---------- shader ---------- */
-const VS = `#version 300 es
-layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNrm;
-layout(location=2) in vec3 aCol;
-layout(location=3) in vec2 aUv;
-layout(location=4) in vec4 iR0;
-layout(location=5) in vec4 iR1;
-layout(location=6) in vec4 iR2;
-layout(location=7) in vec4 iTint;
-layout(location=8) in vec4 iUv;
-uniform mat4 uVP;
-out vec3 vW; out vec3 vN; out vec4 vC; out vec2 vUv;
-void main(){
-  vec4 p=vec4(aPos,1.0);
-  vec3 w=vec3(dot(iR0,p),dot(iR1,p),dot(iR2,p));
-  vW=w;
-  vN=normalize(vec3(dot(iR0.xyz,aNrm),dot(iR1.xyz,aNrm),dot(iR2.xyz,aNrm)));
-  vC=vec4(aCol*iTint.rgb,iTint.a);
-  vUv=aUv*iUv.zw+iUv.xy;
-  gl_Position=uVP*vec4(w,1.0);
-}`;
-const FS = `#version 300 es
-precision highp float;
-in vec3 vW; in vec3 vN; in vec4 vC; in vec2 vUv;
-uniform vec3 uEye; uniform vec3 uFwd; uniform float uLamp;
-uniform float uFogNear; uniform float uFogFar; uniform vec3 uFogCol;
-uniform float uAlpha; uniform float uTexOn; uniform sampler2D uTex;
-uniform vec3 uSky; uniform vec3 uGround; uniform vec3 uKey; uniform float uTime;
-uniform sampler2D uLM; uniform vec4 uLMB; uniform float uLMOn; uniform vec2 uRes;
-out vec4 o;
+/* ---------- material PBR per kelompok batch ---------- */
+const MAT = {
+  rakstruktur: [0.42, 0.65], lantai: [0.34, 0], 'lantai-kantor': [0.22, 0], aspal: [0.95, 0], plafon: [0.8, 0.2], dinding: [0.85, 0],
+  'rolling-door': [0.5, 0.6], kaca: [0.05, 0], 'pallet-kayu': [0.92, 0], barang: [0.6, 0], label: [0.5, 0], papan: [0.4, 0.1],
+  'papan-opname': [0.4, 0], decal: [0.45, 0], halo: [1, 0], dekor: [0.65, 0.2], 'dekor-silinder': [0.5, 0.35], dinamis: [0.6, 0.1],
+};
+const CASTERS = new Set(['rakstruktur', 'pallet-kayu', 'barang', 'dekor', 'dekor-silinder']);
+
+const VS_PRE = `attribute vec4 iTint; attribute vec4 iUv; varying float vEmis; varying vec3 vWP;
+void main() {`;
+const FS_PRE = `
+uniform sampler2D uLM; uniform vec4 uLMB; uniform float uLMOn; uniform float uLamps; uniform float uTime;
+varying float vEmis; varying vec3 vWP;
 float h31(vec3 p){ p=fract(p*0.1031); p+=dot(p,p.yzx+33.33); return fract((p.x+p.y)*p.z); }
-float h21(vec2 p){ vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
 float vn(vec3 p){
   vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
   return mix(mix(mix(h31(i),h31(i+vec3(1,0,0)),f.x),mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x),f.y),
              mix(mix(h31(i+vec3(0,0,1)),h31(i+vec3(1,0,1)),f.x),mix(h31(i+vec3(0,1,1)),h31(i+vec3(1,1,1)),f.x),f.y),f.z);
 }
-vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
-void main(){
-  vec3 n=normalize(vN);
-  vec4 base=vec4(vC.rgb,1.0);
-  if(uTexOn>0.5){
-    vec4 t=texture(uTex,vUv);
-    base.rgb*=t.rgb; base.a=t.a;
-    if(base.a<0.04) discard;
-  }
-  float emis=vC.a;
-  vec3 toP=vW-uEye; float d=length(toP); vec3 dir=toP/max(d,0.001); vec3 V=-dir;
-  float nearF=1.0-smoothstep(10.0,45.0,d);
-
-  /* kotoran / noda: variasi albedo berskala besar + butiran halus dekat kamera, lebih kotor dekat lantai */
-  float g1=vn(vW*0.33), g2=vn(vW*2.7+7.0);
-  float grime=0.86+0.30*g1;
-  grime*=mix(1.0,0.90+0.20*g2,nearF);
-  grime*=1.0-0.20*exp(-vW.y*0.5)*(0.4+0.6*g1);
-  base.rgb*=mix(grime,1.0,emis);
-
-  /* lightmap: AO kontak di kaki rak (R), kolam cahaya lampu (G), titik lampu untuk pantulan (B) */
-  vec3 lm=vec3(1.0,0.0,0.0);
-  if(uLMOn>0.5) lm=texture(uLM,(vW.xz-uLMB.xy)*uLMB.zw).rgb;
-  bool floorS=(n.y>0.9 && vW.y<0.1);
-  float aoK=floorS?1.0:exp(-vW.y*0.34);
-  float ao=mix(1.0,lm.r,aoK);
-  /* gelap di dalam teluk rak: sisi dalam & bawah balok */
-  float under=smoothstep(0.2,-0.8,n.y);
-  ao*=1.0-0.28*under;
-
-  float lampsOn=smoothstep(0.35,0.7,dot(uSky,vec3(0.3333)));   // siang: lampu gudang menyala; malam: hanya senter
-  vec3 L=normalize(vec3(0.35,0.88,0.30));
-  float hemi=n.y*0.5+0.5;
-  float ndl=max(dot(n,L),0.0);
-  vec3 light=mix(uGround,uSky,hemi)*ao+uKey*ndl*mix(1.0,ao,0.6);
-  /* senter kepala */
-  float cone=smoothstep(0.78,0.94,dot(dir,uFwd));
-  float att=1.0/(1.0+0.05*d+0.0045*d*d);
-  vec3 lampC=vec3(1.0,0.93,0.78);
-  light+=uLamp*lampC*cone*att*max(dot(n,V),0.0)*2.2;
-  /* kolam cahaya lampu high-bay di lantai & rak bawah */
-  light+=lampC*lm.g*lampsOn*0.55*max(n.y*0.7+0.3,0.0)*exp(-vW.y*0.22);
-  vec3 col=base.rgb*light;
-
-  /* kilap: lantai epoksi + sedikit sheen (shrink-wrap, cat) di permukaan lain */
-  float gloss=floorS?(0.50+0.50*g1)*(0.75+0.25*g2):0.10;
-  float sh=floorS?46.0:20.0;
-  vec3 Hh=normalize(L+V);
-  vec3 spec=uKey*pow(max(dot(n,Hh),0.0),sh)*gloss*3.0;
-  spec+=lampC*uLamp*pow(max(dot(n,V),0.0),sh)*cone*att*gloss*1.4;
-  float fres=0.04+0.96*pow(1.0-max(dot(n,V),0.0),5.0);
-  if(floorS){
-    vec3 R=reflect(dir,n);
-    if(R.y>0.03){
-      float t=(18.3-vW.y)/R.y;
-      vec2 hp=vW.xz+R.xz*t;
-      float lod=clamp(log2(max(t*0.6,1.0)),0.0,5.0);
-      float lb=textureLod(uLM,(hp-uLMB.xy)*uLMB.zw,lod).b*uLMOn;
-      spec+=lampC*lb*(0.35+fres*2.2)*gloss*lampsOn*3.2*(1.0-smoothstep(60.0,140.0,t));
-    }
-  } else {
-    spec+=uSky*fres*0.10*hemi*ao;
-  }
-  col+=spec*(1.0-emis);
-
-  col=mix(col,base.rgb*1.7,emis);
-  /* tone mapping filmis */
-  col=aces(col*mix(0.8,1.08,lampsOn));
-  col=mix(vec3(dot(col,vec3(0.299,0.587,0.114))),col,0.9);
-  /* kabut + hamburan debu di berkas senter */
-  float f=clamp((d-uFogNear)/(uFogFar-uFogNear),0.0,1.0);
-  col=mix(col,uFogCol,f*f);
-  col+=lampC*uLamp*cone*(1.0-exp(-d*0.03))*0.035;
-  /* vinyet + grain film */
-  vec2 sp=gl_FragCoord.xy/uRes-0.5;
-  col*=1.0-0.34*smoothstep(0.30,0.95,length(sp)*1.35);
-  col+=(h21(gl_FragCoord.xy+fract(uTime)*131.0)-0.5)*0.028;
-  o=vec4(clamp(col,0.0,1.0),uAlpha*base.a);
-}`;
-
-const STRIDE = 20; // float per instance: R0 R1 R2 Tint Uv
+void main() {`;
 
 export class Batch {
   constructor(eng, geo, opt = {}) {
     this.eng = eng; this.geo = geo; this.tex = opt.tex || null; this.transparent = !!opt.transparent;
     this.alpha = opt.alpha ?? 1; this.cap = opt.cap || 256; this.n = 0; this.dynamic = !!opt.dynamic;
     this.data = new Float32Array(this.cap * STRIDE); this.visible = true; this.cull = opt.cull !== false;
-    this.cx = 0; this.cy = 0; this.cz = 0; this.rad = 1e9; this.name = opt.name || '';
-    const gl = eng.gl;
-    this.buf = gl.createBuffer(); this.vao = gl.createVertexArray();
-    gl.bindVertexArray(this.vao);
-    geo.bind();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    for (let k = 0; k < 5; k++) {
-      gl.enableVertexAttribArray(4 + k);
-      gl.vertexAttribPointer(4 + k, 4, gl.FLOAT, false, STRIDE * 4, k * 16);
-      gl.vertexAttribDivisor(4 + k, 1);
-    }
-    gl.bindVertexArray(null);
-    this.dirty = true;
+    this.cx = 0; this.cy = 0; this.cz = 0; this.rad = 1e9; this.name = opt.name || ''; this.dirty = true; this.finalized = false;
+    this.material = eng._material(opt, this.name);
+    this.mesh = null; this._mk(this.cap);
   }
-  _grow() {
-    this.cap *= 2; const d = new Float32Array(this.cap * STRIDE); d.set(this.data); this.data = d;
+  _mk(cap) {
+    if (this.mesh) { this.eng.scene.remove(this.mesh); this.mesh.dispose(); }
+    const m = new THREE.InstancedMesh(this.geo.g.clone(), this.material, cap);
+    m.instanceMatrix.setUsage(this.dynamic ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage);
+    this.aT = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4); this.aU = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
+    this.aT.setUsage(m.instanceMatrix.usage); this.aU.setUsage(m.instanceMatrix.usage);
+    m.geometry.setAttribute('iTint', this.aT); m.geometry.setAttribute('iUv', this.aU);
+    m.frustumCulled = false; m.matrixAutoUpdate = false; m.count = 0;
+    m.castShadow = CASTERS.has(this.name); m.receiveShadow = !this.transparent;
+    if (this.transparent) m.renderOrder = 5;
+    this.mesh = m; this.meshCap = cap; this.eng.scene.add(m); this.dirty = true;
+    if (this.finalized && this.bs) m.boundingSphere = this.bs;
   }
-  /* tambahkan instance. yaw: putar sumbu Y, rz: putar sumbu Z (sebelum yaw) */
+  _grow() { this.cap *= 2; const d = new Float32Array(this.cap * STRIDE); d.set(this.data); this.data = d; }
   add(px, py, pz, sx = 1, sy = 1, sz = 1, yaw = 0, rz = 0, r = 1, g = 1, b = 1, emis = 0, u0 = 0, v0 = 0, du = 1, dv = 1) {
     if (this.n >= this.cap) this._grow();
     this.set(this.n, px, py, pz, sx, sy, sz, yaw, rz, r, g, b, emis, u0, v0, du, dv);
@@ -290,7 +164,6 @@ export class Batch {
     this.dirty = true;
   }
   clear() { this.n = 0; this.dirty = true; }
-  /* hitung bola pembatas dari posisi instance */
   finalize() {
     const d = this.data;
     if (!this.n) { this.rad = 0; this.visible = false; this.upload(); return this; }
@@ -303,143 +176,197 @@ export class Batch {
     }
     this.cx = (x0 + x1) / 2; this.cy = (y0 + y1) / 2; this.cz = (z0 + z1) / 2;
     this.rad = Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + pad;
-    this.visible = true;
+    this.visible = true; this.finalized = true;
+    this.bs = new THREE.Sphere(new THREE.Vector3(this.cx, this.cy, this.cz), this.rad);
+    this.mesh.boundingSphere = this.bs; this.mesh.frustumCulled = this.cull && !this.dynamic;
     this.upload();
     return this;
   }
   upload() {
-    const gl = this.eng.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    gl.bufferData(gl.ARRAY_BUFFER, this.data.subarray(0, Math.max(1, this.n) * STRIDE), this.dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+    if (this.n > this.meshCap) this._mk(Math.max(this.cap, this.n));
+    const m = this.mesh, a = m.instanceMatrix.array, T = this.aT.array, U = this.aU.array, d = this.data, n = this.n;
+    for (let i = 0; i < n; i++) {
+      const o = i * STRIDE, k = i * 16;
+      a[k] = d[o]; a[k + 1] = d[o + 4]; a[k + 2] = d[o + 8]; a[k + 3] = 0;
+      a[k + 4] = d[o + 1]; a[k + 5] = d[o + 5]; a[k + 6] = d[o + 9]; a[k + 7] = 0;
+      a[k + 8] = d[o + 2]; a[k + 9] = d[o + 6]; a[k + 10] = d[o + 10]; a[k + 11] = 0;
+      a[k + 12] = d[o + 3]; a[k + 13] = d[o + 7]; a[k + 14] = d[o + 11]; a[k + 15] = 1;
+      T[i * 4] = d[o + 12]; T[i * 4 + 1] = d[o + 13]; T[i * 4 + 2] = d[o + 14]; T[i * 4 + 3] = d[o + 15];
+      U[i * 4] = d[o + 16]; U[i * 4 + 1] = d[o + 17]; U[i * 4 + 2] = d[o + 18]; U[i * 4 + 3] = d[o + 19];
+    }
+    m.count = n; m.instanceMatrix.needsUpdate = true; this.aT.needsUpdate = true; this.aU.needsUpdate = true;
     this.dirty = false;
   }
 }
 
+const STRIDE = 20; // float per instance: R0 R1 R2 Tint Uv
+
 class Geo {
-  constructor(gl, mb) {
-    this.gl = gl; this.radius = mb.radius() || 1;
-    const n = mb.pos.length / 3, inter = new Float32Array(n * 11);
-    for (let i = 0; i < n; i++) {
-      inter.set([mb.pos[i * 3], mb.pos[i * 3 + 1], mb.pos[i * 3 + 2], mb.nrm[i * 3], mb.nrm[i * 3 + 1], mb.nrm[i * 3 + 2],
-        mb.col[i * 3], mb.col[i * 3 + 1], mb.col[i * 3 + 2], mb.uv[i * 2], mb.uv[i * 2 + 1]], i * 11);
-    }
-    this.vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vb); gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
-    this.ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ib);
-    const big = n > 65535;
-    this.itype = big ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, big ? new Uint32Array(mb.idx) : new Uint16Array(mb.idx), gl.STATIC_DRAW);
-    this.count = mb.idx.length;
-    this.tris = mb.idx.length / 3;
-  }
-  bind() {
-    const gl = this.gl, S = 44;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.vb);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, S, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, S, 12);
-    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, S, 24);
-    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, S, 36);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ib);
+  constructor(mb) {
+    this.radius = mb.radius() || 1;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(mb.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(mb.nrm, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(mb.col, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(mb.uv, 2));
+    g.setIndex(mb.idx);
+    this.g = g; this.tris = mb.idx.length / 3;
   }
 }
 
+const VIGNETTE = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; varying vec2 vUv;
+  float h21(vec2 p){ vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
+  void main(){
+    vec3 c=texture2D(tDiffuse,vUv).rgb; vec2 sp=vUv-0.5;
+    c*=1.0-0.30*smoothstep(0.30,0.95,length(sp*vec2(uRes.x/uRes.y,1.0))*1.25);
+    c+=(h21(gl_FragCoord.xy+fract(uTime)*131.0)-0.5)*0.022;
+    gl_FragColor=vec4(c,1.0);
+  }`,
+};
+
 export class Engine {
   constructor(canvas) {
-    const gl = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance', alpha: false });
-    if (!gl) throw new Error('WebGL2 tidak tersedia di browser ini.');
-    this.gl = gl; this.canvas = canvas; this.batches = [];
-    this.scale = 1; this.fogCol = [0.055, 0.07, 0.09]; this.fogNear = 40; this.fogFar = 190;
-    this.lamp = 1; this.stats = { draws: 0, tris: 0 };
-    const sh = (type, src) => {
-      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-      return s;
-    };
-    const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    this.prog = p; gl.useProgram(p);
-    this.u = {};
-    for (const n of ['uVP', 'uEye', 'uFwd', 'uLamp', 'uFogNear', 'uFogFar', 'uFogCol', 'uAlpha', 'uTexOn', 'uTex', 'uSky', 'uGround', 'uKey', 'uTime', 'uLM', 'uLMB', 'uLMOn', 'uRes']) this.u[n] = gl.getUniformLocation(p, n);
-    gl.uniform1i(this.u.uTex, 0); gl.uniform1i(this.u.uLM, 1);
-    this.lmTex = null; this.lmB = [0, 0, 1, 1];
+    let r;
+    try { r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false }); }
+    catch (e) { throw new Error('WebGL2 tidak tersedia di browser ini.'); }
+    this.renderer = r; this.canvas = canvas; this.batches = [];
+    r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 0.82;
+    r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.scene = new THREE.Scene(); this.camera = new THREE.PerspectiveCamera(72, 1.6, 0.1, 330);
+    this.scale = 1; this.fogCol = [0.055, 0.07, 0.09]; this.fogNear = 40; this.fogFar = 190; this.lamp = 1;
     this.sky = [0.78, 0.82, 0.9]; this.ground = [0.34, 0.33, 0.33]; this.key = [0.32, 0.30, 0.26];
-    this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
-    gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    this.stats = { draws: 0, tris: 0 }; this.aspect = 1.6; this.tier = 2;
+    this.U = { uLM: { value: null }, uLMB: { value: new THREE.Vector4(0, 0, 1, 1) }, uLMOn: { value: 0 }, uLamps: { value: 1 }, uTime: { value: 0 } };
+    this.aniso = Math.min(8, r.capabilities.getMaxAnisotropy());
+    this.scene.fog = new THREE.Fog(0x101418, 40, 190); this.scene.background = new THREE.Color(0x101418);
+    // IBL lembut: pantulan ruangan untuk logam & lantai
+    const pm = new THREE.PMREMGenerator(r);
+    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; this.scene.environmentIntensity = 0.3; pm.dispose();
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1); this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight(0xffffff, 1); this.sun.position.set(0.35, 0.88, 0.3); this.scene.add(this.sun);
+    this.head = new THREE.SpotLight(0xffe9c4, 100, 32, 0.52, 0.75, 1.3);
+    this.head.castShadow = true; this.head.shadow.mapSize.set(1024, 1024); this.head.shadow.camera.near = 0.25; this.head.shadow.camera.far = 30;
+    this.head.shadow.bias = -0.0004; this.head.shadow.normalBias = 0.03;
+    this.scene.add(this.head); this.scene.add(this.head.target);
+    this.lampPos = []; this.lampH = 18.3; this.pools = [];
+    for (let i = 0; i < 6; i++) { const p = new THREE.PointLight(0xfff0d8, 0, 26, 2); this.scene.add(p); this.pools.push(p); }
+    this._buildComposer(2, 2);
   }
-  geo(mb) { return new Geo(this.gl, mb); }
+  _buildComposer(w, h) {
+    const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
+    this.composer = new EffectComposer(this.renderer, rt); this.composer.setPixelRatio(1);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.gtao = new GTAOPass(this.scene, this.camera, w, h);
+    this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.2, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
+    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, radiusExponent: 1, rings: 2, samples: 12 });
+    this.gtao.blendIntensity = 0.9; this.composer.addPass(this.gtao);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.55, 0.9); this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+    this.fx = new ShaderPass(VIGNETTE); this.composer.addPass(this.fx);
+  }
+  /* material PBR + suntikan shader: warna sRGB per-instance, UV atlas per-instance, emisi, kotoran, lightmap lantai */
+  _material(opt, name) {
+    const [rough, metal] = MAT[name] || [0.7, 0.15], tr = !!opt.transparent;
+    const m = new THREE.MeshStandardMaterial({
+      map: opt.tex || null, vertexColors: true, roughness: rough, metalness: metal, envMapIntensity: metal > 0.3 ? 1.1 : 0.7,
+      transparent: tr, opacity: opt.alpha ?? 1, depthWrite: !tr, side: (tr || opt.noCull) ? THREE.DoubleSide : THREE.FrontSide,
+      alphaTest: (opt.tex && !tr) ? 0.04 : 0,
+    });
+    if (name === 'decal' || name === 'label' || name === 'papan' || name === 'papan-opname') { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; }
+    const U = this.U;
+    m.customProgramCacheKey = () => 'opname-v1';
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader.replace('void main() {', VS_PRE)
+        .replace('#include <color_vertex>', '#include <color_vertex>\n#ifdef USE_COLOR\n vColor.rgb = pow(max(vColor.rgb * iTint.rgb, vec3(0.0)), vec3(2.2));\n#endif')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\n vMapUv = vMapUv * iUv.zw + iUv.xy;\n#endif')
+        .replace('#include <project_vertex>', '#include <project_vertex>\n vEmis = iTint.w; { vec4 wp4 = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\n wp4 = instanceMatrix * wp4;\n#endif\n vWP = (modelMatrix * wp4).xyz; }');
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', FS_PRE)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor * (0.78 + 0.44 * vn(vWP * 0.45)), 0.04, 1.0);')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  totalEmissiveRadiance += diffuseColor.rgb * vEmis * 2.4; diffuseColor.rgb *= (1.0 - vEmis);
+  float g1 = vn(vWP * 0.33), g2 = vn(vWP * 2.7 + 7.0);
+  float nearF = 1.0 - smoothstep(10.0, 45.0, length(vWP - cameraPosition));
+  float grime = (0.86 + 0.30 * g1) * mix(1.0, 0.90 + 0.20 * g2, nearF) * (1.0 - 0.20 * exp(-vWP.y * 0.5) * (0.4 + 0.6 * g1));
+  diffuseColor.rgb *= mix(grime, 1.0, vEmis);
+  vec3 wN = inverseTransformDirection(normal, viewMatrix);
+  bool floorS = (wN.y > 0.9 && vWP.y < 0.1);
+  vec3 lm = vec3(1.0, 0.0, 0.0);
+  if (uLMOn > 0.5) lm = texture2D(uLM, (vWP.xz - uLMB.xy) * uLMB.zw).rgb;
+  float gAO = mix(1.0, lm.r, floorS ? 1.0 : exp(-vWP.y * 0.34));`)
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+  reflectedLight.indirectDiffuse *= gAO; reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.7); reflectedLight.directDiffuse *= mix(1.0, gAO, 0.45);
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(1.0, 0.93, 0.78) * lm.g * uLamps * 0.9 * max(wN.y * 0.7 + 0.3, 0.0) * exp(-vWP.y * 0.22);
+  if (floorS && uLMOn > 0.5) {
+    vec3 wV = normalize(cameraPosition - vWP); vec3 wR = reflect(-wV, wN);
+    if (wR.y > 0.03) {
+      float t = (18.3 - vWP.y) / wR.y; vec2 hp = vWP.xz + wR.xz * t;
+      float lod = clamp(log2(max(t * 0.6, 1.0)), 0.0, 5.0);
+      float lb = textureLod(uLM, (hp - uLMB.xy) * uLMB.zw, lod).b;
+      float fres = 0.04 + 0.96 * pow(1.0 - max(dot(wN, wV), 0.0), 5.0);
+      totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * lb * (0.3 + fres * 2.0) * (1.0 - roughnessFactor) * uLamps * 2.6 * (1.0 - smoothstep(60.0, 140.0, t));
+    }
+  }`);
+    };
+    return m;
+  }
+  geo(mb) { return new Geo(mb); }
   texture(src, { repeat = false, mip = true } = {}) {
-    const gl = this.gl, t = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
-    if (mip) gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    const w = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, w); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, w);
-    if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(this.aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    const t = new THREE.CanvasTexture(src);
+    t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = mip; t.anisotropy = this.aniso;
+    t.minFilter = mip ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+    if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.needsUpdate = true;
     return t;
   }
-  /* lightmap lantai: canvas RGBA -> tekstur unit 1, b = [x0, z0, lebar, dalam] dalam meter */
   setLightmap(canvas, b) {
-    const gl = this.gl, t = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.activeTexture(gl.TEXTURE0);
-    this.lmTex = t; this.lmB = [b[0], b[1], 1 / b[2], 1 / b[3]];
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.NoColorSpace; t.flipY = false; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+    this.U.uLM.value = t; this.U.uLMB.value.set(b[0], b[1], 1 / b[2], 1 / b[3]); this.U.uLMOn.value = 1;
   }
+  setLamps(pos, h) { this.lampPos = pos; this.lampH = h; }
   batch(geo, opt) { const b = new Batch(this, geo, opt); this.batches.push(b); return b; }
+  setTier(t) { this.tier = t; this.gtao.enabled = t >= 2; this.bloom.enabled = t >= 1; this.head.castShadow = t >= 1; this.renderer.shadowMap.enabled = t >= 1; }
   resize(cssW, cssH, dpr) {
     const w = Math.max(2, Math.floor(cssW * dpr * this.scale)), h = Math.max(2, Math.floor(cssH * dpr * this.scale));
-    if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
-    this.gl.viewport(0, 0, w, h);
-    this.aspect = w / h;
+    if (this.canvas.width !== w || this.canvas.height !== h) { this.renderer.setPixelRatio(1); this.renderer.setSize(w, h, false); this.composer.setSize(w, h); }
+    this.fx.uniforms.uRes.value.set(w, h);
+    this.aspect = w / h; this.camera.aspect = this.aspect; this.camera.updateProjectionMatrix();
   }
   render(cam, time) {
-    const gl = this.gl, u = this.u;
-    gl.clearColor(this.fogCol[0], this.fogCol[1], this.fogCol[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    const r = this.renderer, c = this.camera, S = THREE.SRGBColorSpace;
+    const lampsOn = this.lamp < 1.5 ? 1 : 0;
+    this.scene.fog.color.setRGB(this.fogCol[0], this.fogCol[1], this.fogCol[2], S); this.scene.fog.near = this.fogNear; this.scene.fog.far = this.fogFar;
+    this.scene.background.copy(this.scene.fog.color);
+    this.hemi.color.setRGB(this.sky[0], this.sky[1], this.sky[2], S); this.hemi.groundColor.setRGB(this.ground[0], this.ground[1], this.ground[2], S);
+    this.hemi.intensity = 1.5 * (lampsOn ? 1 : 0.7);
+    this.sun.color.setRGB(this.key[0] / 0.32, this.key[1] / 0.32, this.key[2] / 0.32, S); this.sun.intensity = lampsOn ? 0.5 : 0.08;
+    this.scene.environmentIntensity = lampsOn ? 0.45 : 0.12;
+    this.U.uLamps.value = lampsOn; this.U.uTime.value = time; this.fx.uniforms.uTime.value = time;
+    c.fov = cam.fov * 180 / Math.PI; c.position.set(cam.x, cam.y, cam.z);
     const cp = Math.cos(cam.pitch), fx = Math.sin(cam.yaw) * cp, fy = Math.sin(cam.pitch), fz = -Math.cos(cam.yaw) * cp;
-    const P = mat4Persp(cam.fov, this.aspect || 1.6, 0.08, 420);
-    const V = mat4Look(cam.x, cam.y, cam.z, cam.x + fx, cam.y + fy, cam.z + fz);
-    const VP = mat4Mul(P, V); this.VP = VP;
-    const planes = frustumPlanes(VP);
-    gl.useProgram(this.prog);
-    gl.uniformMatrix4fv(u.uVP, false, VP);
-    gl.uniform3f(u.uEye, cam.x, cam.y, cam.z); gl.uniform3f(u.uFwd, fx, fy, fz);
-    gl.uniform1f(u.uLamp, this.lamp); gl.uniform1f(u.uFogNear, this.fogNear); gl.uniform1f(u.uFogFar, this.fogFar);
-    gl.uniform3fv(u.uFogCol, this.fogCol); gl.uniform3fv(u.uSky, this.sky); gl.uniform3fv(u.uGround, this.ground); gl.uniform3fv(u.uKey, this.key);
-    gl.uniform1f(u.uTime, time);
-    gl.uniform2f(u.uRes, this.canvas.width, this.canvas.height);
-    gl.uniform4fv(u.uLMB, this.lmB); gl.uniform1f(u.uLMOn, this.lmTex ? 1 : 0);
-    if (this.lmTex) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.lmTex); gl.activeTexture(gl.TEXTURE0); }
-    let draws = 0, tris = 0;
-    const vis = (b) => {
-      if (!b.visible || !b.n) return false;
-      if (b.dirty) b.upload();
-      if (!b.cull) return true;
-      const dx = b.cx - cam.x, dy = b.cy - cam.y, dz = b.cz - cam.z;
-      if (Math.hypot(dx, dy, dz) - b.rad > this.fogFar + 20) return false;
-      for (let i = 0; i < 6; i++) { const q = planes[i]; if (q[0] * b.cx + q[1] * b.cy + q[2] * b.cz + q[3] < -b.rad) return false; }
-      return true;
-    };
-    const draw = (b) => {
-      gl.bindVertexArray(b.vao);
-      gl.uniform1f(u.uAlpha, b.alpha);
-      if (b.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, b.tex); gl.uniform1f(u.uTexOn, 1); } else gl.uniform1f(u.uTexOn, 0);
-      gl.drawElementsInstanced(gl.TRIANGLES, b.geo.count, b.geo.itype, 0, b.n);
-      draws++; tris += b.geo.tris * b.n;
-    };
-    gl.disable(gl.BLEND); gl.depthMask(true);
-    for (const b of this.batches) if (!b.transparent && vis(b)) { b.noCull ? gl.disable(gl.CULL_FACE) : gl.enable(gl.CULL_FACE); draw(b); }
-    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.disable(gl.CULL_FACE);
-    for (const b of this.batches) if (b.transparent && vis(b)) draw(b);
-    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
-    gl.bindVertexArray(null);
-    this.stats.draws = draws; this.stats.tris = tris;
+    c.lookAt(cam.x + fx, cam.y + fy, cam.z + fz); c.updateProjectionMatrix(); c.updateMatrixWorld();
+    // senter kepala
+    this.head.position.set(cam.x + 0.1, cam.y - 0.12, cam.z); this.head.target.position.set(cam.x + fx * 10, cam.y + fy * 10, cam.z + fz * 10);
+    this.head.intensity = 55 * this.lamp * (lampsOn ? 0.6 : 1.5); this.head.target.updateMatrixWorld();
+    // lampu langit-langit terdekat jadi lampu titik nyata
+    const L = this.lampPos, near = [];
+    if (lampsOn) for (let i = 0; i < L.length; i++) { const d = (L[i][0] - cam.x) ** 2 + (L[i][1] - cam.z) ** 2; if (near.length < 6 || d < near[near.length - 1][0]) { near.push([d, i]); near.sort((a, b) => a[0] - b[0]); if (near.length > 6) near.pop(); } }
+    this.pools.forEach((p, k) => { const n = near[k]; if (n) { p.position.set(L[n[1]][0], this.lampH, L[n[1]][1]); p.intensity = 420; } else p.intensity = 0; });
+    // culling jarak
+    const far = this.fogFar + 20;
+    for (const b of this.batches) {
+      if (b.dirty && b.finalized === false && b.dynamic) b.upload();
+      else if (b.dirty) b.upload();
+      let v = b.visible && b.n > 0;
+      if (v && b.cull && b.finalized && Math.hypot(b.cx - cam.x, b.cy - cam.y, b.cz - cam.z) - b.rad > far) v = false;
+      b.mesh.visible = v;
+    }
+    if (this.tier >= 1) this.composer.render(); else r.render(this.scene, c);
+    this.stats.draws = r.info.render.calls; this.stats.tris = r.info.render.triangles;
   }
 }

@@ -31,22 +31,30 @@ function noiseFill(g, w, h, base, amp, n) {
 }
 export function concreteCanvas() {
   const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
-  noiseFill(g, 512, 512, '#6d7076', 90, 9000);
-  const gr = g.createRadialGradient(256, 256, 40, 256, 256, 360); gr.addColorStop(0, 'rgba(255,255,255,.05)'); gr.addColorStop(1, 'rgba(0,0,0,.10)');
-  g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
-  g.strokeStyle = 'rgba(20,22,26,.55)'; g.lineWidth = 3; g.strokeRect(1, 1, 510, 510);
-  g.strokeStyle = 'rgba(20,22,26,.18)'; g.lineWidth = 1;
-  for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(rnd() * 512, rnd() * 512); for (let k = 0; k < 4; k++) g.lineTo(rnd() * 512, rnd() * 512); g.stroke(); }
+  noiseFill(g, 512, 512, '#8d8b84', 70, 14000);
+  // noda besar tak merata (oli, bekas ban, air)
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * 512, y = rnd() * 512, r = 30 + rnd() * 90, d = rnd() < 0.7;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, d ? 'rgba(40,38,34,.18)' : 'rgba(210,200,175,.14)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // goresan bekas roda & dasar kotor
+  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(35,32,28,${0.05 + rnd() * 0.1})`; g.fillRect(rnd() * 512, rnd() * 512, 20 + rnd() * 120, 1 + rnd() * 3); }
+  // sambungan kontrol & retak rambut
+  g.strokeStyle = 'rgba(25,24,22,.55)'; g.lineWidth = 2.5; g.strokeRect(1, 1, 510, 510);
+  g.strokeStyle = 'rgba(25,24,22,.28)'; g.lineWidth = 1;
+  for (let i = 0; i < 7; i++) { g.beginPath(); let x = rnd() * 512, y = rnd() * 512; g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (rnd() - 0.5) * 90; y += (rnd() - 0.5) * 90; g.lineTo(x, y); } g.stroke(); }
   return c;
 }
 export function wallCanvas() {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
   for (let x = 0; x < 256; x += 16) {
     const gr = g.createLinearGradient(x, 0, x + 16, 0);
-    gr.addColorStop(0, '#b9c0c8'); gr.addColorStop(0.5, '#e4e8ec'); gr.addColorStop(1, '#a5adb6');
+    gr.addColorStop(0, '#2c3a4a'); gr.addColorStop(0.5, '#4a5b6e'); gr.addColorStop(1, '#2a3644');
     g.fillStyle = gr; g.fillRect(x, 0, 16, 256);
   }
-  for (let i = 0; i < 1200; i++) { g.fillStyle = `rgba(60,70,80,${rnd() * 0.07})`; g.fillRect(rnd() * 256, rnd() * 256, 2, 8 + rnd() * 26); }
+  for (let i = 0; i < 1200; i++) { g.fillStyle = `rgba(10,14,20,${rnd() * 0.12})`; g.fillRect(rnd() * 256, rnd() * 256, 2, 8 + rnd() * 26); }
   return c;
 }
 export function slatCanvas() {
@@ -85,19 +93,18 @@ export function buildAtlas(rackInfo) {
   A.add('white', (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); });
   for (const r of rackInfo) {
     A.add('r:' + r.code, (g, w, h) => {
-      g.fillStyle = r.nw ? '#5d6670' : '#14407a'; roundRect(g, 4, 4, w - 8, h - 8, 14); g.fill();
-      g.strokeStyle = r.nw ? '#c9d0d6' : '#ffd23f'; g.lineWidth = 6; roundRect(g, 8, 8, w - 16, h - 16, 11); g.stroke();
-      g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `800 66px ${FONT}`; g.fillText(r.code, w / 2, 70);
-      g.font = `600 24px ${FONT}`; g.fillStyle = r.nw ? '#e2e6ea' : '#ffd23f';
-      g.fillText(r.nw ? 'RACKING BARU' : r.sub, w / 2, 104);
+      g.fillStyle = r.nw ? '#c9d0d6' : '#f4f6f7'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#8c949b'; g.lineWidth = 5; g.strokeRect(3, 3, w - 6, h - 6);
+      g.fillStyle = r.nw ? '#5b6770' : '#1f86d8'; g.textAlign = 'center'; g.font = `600 78px ${FONT}`; g.fillText(r.code.replace(/^([A-Z])/, '$1 '), w / 2, 84);
+      g.font = `600 20px ${FONT}`; g.fillStyle = '#58626b'; g.fillText(r.nw ? 'RACKING BARU' : r.sub, w / 2, 112);
     });
   }
   for (let n = 1; n <= 26; n++) {
     A.add('b:' + n, (g, w, h) => {
-      g.fillStyle = '#103866'; g.fillRect(0, 0, w, h);
-      g.fillStyle = '#ffd23f'; g.fillRect(0, 0, w, 12); g.fillRect(0, h - 12, w, 12);
-      g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `800 78px ${FONT}`; g.fillText(String(n).padStart(2, '0'), w / 2 + 28, 88);
-      g.font = `700 34px ${FONT}`; g.fillStyle = '#ffd23f'; g.textAlign = 'left'; g.fillText('BAY', 18, 82);
+      g.fillStyle = '#eef1f3'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#1f86d8'; g.fillRect(0, h - 10, w, 10);
+      g.fillStyle = '#1f86d8'; g.textAlign = 'center'; g.font = `700 78px ${FONT}`; g.fillText(String(n).padStart(2, '0'), w / 2 + 28, 84);
+      g.font = `700 32px ${FONT}`; g.fillStyle = '#58626b'; g.textAlign = 'left'; g.fillText('BAY', 18, 80);
     });
   }
   const sign = (name, bg, fg, t1, t2, border) => A.add(name, (g, w, h) => {

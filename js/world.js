@@ -105,7 +105,7 @@ export class World {
   /* ---------- struktur rak (tiang, balok, penyilang) ---------- */
   _rackStructure() {
     const e = this.eng, L = C.LVH;
-    const blueUp = rgb(0x1f5fb5), orange = rgb(0xee7a1a), grey = rgb(0x8f98a2), greyB = rgb(0xb4bbc2), yellow = rgb(0xf2c200), brace = rgb(0x1a4f98);
+    const blueUp = rgb(0x1d5a9e), olive = rgb(0x6c7468), orange = rgb(0xec6a22), grey = rgb(0x8f98a2), greyB = rgb(0xb4bbc2), yellow = rgb(0xf2c200), brace = rgb(0x1a4f98), braceO = rgb(0x7a8276);
     const S = (this.struct = new Chunker(e, this.gBox, { size: 24, name: 'rakstruktur' }));
     const signs = (this.signs = new Chunker(e, this.gQuad, { size: 24, tex: this.atlasTex, name: 'papan' }));
     this.rackRects = [];
@@ -138,14 +138,14 @@ export class World {
           const z = this.zOf(run.start) - C.CELL / 2 + k * C.CELL;
           const lv = Math.max(lvAt(run.start + k - 1), lvAt(run.start + k)) || lvAt(run.start);
           const nw = nwAt(Math.min(run.end, run.start + Math.min(k, n - 1)));
-          const H = lv * L + 0.15, up = nw ? grey : blueUp;
+          const H = lv * L + 0.15, isC = rack.grp === 'C', up = nw ? grey : (isC ? blueUp : olive);
           for (const sx of [-1, 1]) {
             S.box(x + sx * 0.5, H / 2, z, 0.09, H, 0.1, up);
             S.box(x + sx * 0.5, 0.225, z, 0.18, 0.45, 0.18, yellow);
           }
           const dy = L - 0.3, dxw = 1.0, dl = Math.hypot(dxw, dy), ang = Math.atan2(dy, dxw);
-          for (let i = 0; i < lv; i++) S.box(x, i * L + 0.2 + dy / 2, z, dl, 0.035, 0.035, nw ? greyB : brace, 0, 0, (i % 2 ? -1 : 1) * ang);
-          for (let i = 0; i <= lv; i += 2) S.box(x, i * L + 0.2, z, 1.0, 0.05, 0.05, nw ? greyB : brace);
+          for (let i = 0; i < lv; i++) S.box(x, i * L + 0.2 + dy / 2, z, dl, 0.035, 0.035, nw ? greyB : (isC ? brace : braceO), 0, 0, (i % 2 ? -1 : 1) * ang);
+          for (let i = 0; i <= lv; i += 2) S.box(x, i * L + 0.2, z, 1.0, 0.05, 0.05, nw ? greyB : (isC ? brace : braceO));
         }
         // label bay (di balok level 1) — pada sisi menghadap lorong
         const faces = rack.cols.length > 1 ? [col === rack.cols[0] ? -1 : 1] : [-1, 1];
@@ -193,12 +193,13 @@ export class World {
     const base = cl >= 0 ? rgb(parseInt(CUST[cl].color.slice(1), 16)) : [0.72, 0.72, 0.7];
     let c;
     switch (kind) {
-      case KIND.CARTON: c = mix([0.8, 0.62, 0.4], base, 0.35); break;
-      case KIND.DRUM: c = mix([0.9, 0.9, 0.9], base, 0.8); break;
-      case KIND.SACK: c = mix([0.95, 0.93, 0.88], base, 0.3); break;
-      case KIND.WRAP: c = mix([0.88, 0.92, 0.96], base, 0.25); break;
-      case KIND.PAINT: c = mix([1, 1, 1], base, 0.9); break;
-      default: c = mix([0.95, 0.95, 0.95], base, 0.4);
+      case KIND.CARTON: c = mix([0.74, 0.57, 0.38], base, 0.10); break;
+      case KIND.DRUM: c = mix([0.86, 0.88, 0.9], base, 0.3); break;
+      case KIND.SACK: c = r() < 0.45 ? mix([0.93, 0.62, 0.6], base, 0.08) : mix([0.93, 0.93, 0.9], base, 0.08); break;
+      case KIND.WRAP: c = r() < 0.6 ? mix([0.17, 0.17, 0.19], base, 0.10) : mix([0.7, 0.55, 0.38], base, 0.12); break;
+      case KIND.PAINT: c = mix([0.95, 0.95, 0.95], base, 0.55); break;
+      case KIND.BOX: c = mix([0.78, 0.68, 0.52], base, 0.10); break;
+      default: c = mix([0.8, 0.7, 0.55], base, 0.15);
     }
     return mul(c, 0.86 + r() * 0.2);
   }
@@ -211,7 +212,7 @@ export class World {
     let ch = this.pal.get(k);
     if (!ch) {
       const e = this.eng, o = { cap: 128 };
-      ch = { base: e.batch(this.gPalBase, o), kinds: this.gKinds.map((g) => e.batch(g, o)), label: e.batch(this.gQuad, { ...o, tex: this.atlasTex }) };
+      ch = { base: e.batch(this.gPalBase, { ...o, name: 'pallet-kayu' }), kinds: this.gKinds.map((g) => e.batch(g, { ...o, name: 'barang' })), label: e.batch(this.gQuad, { ...o, tex: this.atlasTex, name: 'label' }) };
       this.pal.set(k, ch);
     }
     return ch;

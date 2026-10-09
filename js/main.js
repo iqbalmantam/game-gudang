@@ -46,6 +46,8 @@ const keys = new Set();
 async function boot() {
   try {
     eng = new Engine(canvas);
+    if (/[?&]touch/.test(location.search) || window.matchMedia('(pointer: coarse)').matches) eng.setTier(1);   // HP: tanpa SSAO
+    { const t = /[?&]tier=(\d)/.exec(location.search); if (t) eng.setTier(+t[1]); }
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 40)));
     world = new World(eng); env = world.env;
     player = new Player(world, env);
@@ -565,7 +567,8 @@ function adaptQuality(dt) {
   if (qualT < 2.5) return;
   const avg = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0; qualT = 0;
   if (S.mode === 'paused') return;
-  if (avg > 0.03 && eng.scale > 0.5) { eng.scale = Math.max(0.5, +(eng.scale - 0.1).toFixed(2)); resize(); }
+  if (avg > 0.03 && eng.scale <= 0.6 && eng.tier > 0) { eng.setTier(eng.tier - 1); eng.scale = 0.85; resize(); }   // masih berat: matikan efek (SSAO → bloom/bayangan → polos)
+  else if (avg > 0.03 && eng.scale > 0.5) { eng.scale = Math.max(0.5, +(eng.scale - 0.1).toFixed(2)); resize(); }
   else if (avg < 0.0175 && eng.scale < 1) { eng.scale = Math.min(1, +(eng.scale + 0.05).toFixed(2)); resize(); }
 }
 
