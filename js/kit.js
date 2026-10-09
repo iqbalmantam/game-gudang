@@ -170,3 +170,13 @@ export function lightmapCanvas(w, lampPos, C) {
   go.putImageData(od, 0, 0);
   return { canvas: out, bounds: [Bd.x0, Bd.z0, W, D] };
 }
+
+/* halo lampu: gradien radial lembut */
+export function glowCanvas() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,248,225,0.95)'); gr.addColorStop(0.12, 'rgba(255,240,205,0.55)');
+  gr.addColorStop(0.4, 'rgba(255,230,180,0.14)'); gr.addColorStop(1, 'rgba(255,225,170,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return c;
+}

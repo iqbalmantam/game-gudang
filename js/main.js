@@ -82,6 +82,7 @@ function applyAtmos(name) {
   const a = ATMOS[name] || ATMOS.day;
   eng.sky = a.sky.slice(); eng.ground = a.ground.slice(); eng.key = a.key.slice(); eng.fogCol = a.fog.slice();
   eng.lamp = a.lamp; eng.fogNear = a.near; eng.fogFar = a.far;
+  if (env && env.setGlow) env.setGlow(a.lamp < 1.5);
 }
 
 /* ------------------------------------------------------------ level */

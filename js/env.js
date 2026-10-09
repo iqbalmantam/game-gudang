@@ -1,5 +1,5 @@
 /* env.js — bangunan gudang, dock, kantor, dekorasi, forklift & NPC (dinamis) */
-import { Chunker, rgb, mix, wallCanvas, slatCanvas, asphaltCanvas, tileCanvas, lightmapCanvas } from './kit.js';
+import { Chunker, rgb, mix, wallCanvas, slatCanvas, asphaltCanvas, tileCanvas, lightmapCanvas, glowCanvas } from './kit.js';
 import { mulberry32, KIND, KIND_H } from './items.js';
 import { C } from './world.js';
 import { CUST } from './data.js';
@@ -70,6 +70,15 @@ export function buildEnvironment(w) {
   }
   w.lampCount = lampPos.length;
   { const lm = lightmapCanvas(w, lampPos, C); e.setLightmap(lm.canvas, lm.bounds); }
+  /* halo cahaya di bawah tiap lampu (dua bidang tegak bersilang + satu bidang datar) */
+  const glowOpt = { size: 40, transparent: true, alpha: 0.9, tex: e.texture(glowCanvas()), name: 'halo' };
+  const glowV = new Chunker(e, w.gQuad, glowOpt), glowH = new Chunker(e, w.gFloorQuad, glowOpt);
+  for (const [x, z] of lampPos) {
+    glowV.add(x, H - 2.9, z, 7, 7, 1, 0, 0, 1, 0.95, 0.82, 1); glowV.add(x, H - 2.9, z, 7, 7, 1, PI / 2, 0, 1, 0.95, 0.82, 1);
+    glowH.add(x, H - 2.9, z, 7, 1, 7, 0, 0, 1, 0.95, 0.82, 1);
+  }
+  glowV.finalize(); glowH.finalize();
+  const setGlow = (on) => { for (const b of [...glowV.map.values(), ...glowH.map.values()]) b.visible = on && b.n > 0; };
 
   /* ---------- marka lantai: garis kuning tepi lorong ---------- */
   const lineY = rgb(0xe5b800);
@@ -364,7 +373,7 @@ export function buildEnvironment(w) {
     return { nearestForklift: nearest };
   }
   return {
-    update, setBoard, forklifts, parked, npcs, notes, circles, circlesDyn,
+    update, setBoard, setGlow, forklifts, parked, npcs, notes, circles, circlesDyn,
     addNote(id, x, y, z) { notes.push({ id, x, y, z, taken: false }); },
     removeNote(id) { const n = notes.find((q) => q.id === id); if (n) n.taken = true; },
     clearNotes() { notes.length = 0; },
